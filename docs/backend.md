@@ -1,0 +1,77 @@
+# Supabase backend
+
+The migration is the authoritative money, privacy, concurrency, and score boundary. The browser uses only the project URL and publishable/anon key; **never** a service-role key. Demo data is separate from Supabase and is not copied into real accounts.
+
+## Setup
+
+1. Install the Supabase CLI and Docker, then run `supabase start` from the repository root and `supabase db reset`. Alternatively link a hosted project with `supabase link --project-ref YOUR_REF` and apply `supabase db push`.
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in your local environment. Configure the frontend auth adapter with email OTP/magic links.
+3. In Supabase Auth, set the production Site URL and exact allowed callback URLs, configure SMTP, and enable email confirmation. Local settings are in `supabase/config.toml`.
+4. For a fast isolated database check, run `npm run test:db` (uses the PGlite development dependency with pgcrypto and a minimal Supabase auth identity fixture). It runs the real PostgreSQL migration and transactional assertions; it does not test hosted email delivery or concurrent database connections. Also run `supabase/tests/security.sql` against a local disposable database with `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/security.sql`. The test rolls back its fixtures.
+5. Before public traffic, enable Supabase gateway/WAF rate limits and authentication CAPTCHA. Database limits bound valid capability activity but do not replace IP-based ingress controls. Monitor errors and audit events.
+
+## RPC contract
+
+Use `supabase.rpc('party_api', { action, payload })`. Errors are returned through Supabase's normal `error` object and must be shown to the user. All mutations require a fresh UUID `idempotencyKey`. Retrying an operation uses its original key; reusing a key for a different action or payload is rejected. Idempotency responses (including capabilities needed for exact retries) are encrypted at rest with a private database key. Raw guest tokens are never stored in access-token tables.
+
+Money is always integer **cents**. Date-times are ISO 8601 with explicit offsets. Status values are lowercase. Do not send a user ID, verified status, score totals, or a trusted host flag from the browser.
+
+### Public invitation and guests
+
+| Action | Payload | Result |
+| --- | --- | --- |
+| `invitation` | `inviteToken` | Party snapshot; no street address, guest identities, or individual contribution amounts |
+| `rsvp` | `inviteToken`, `name`, `status` (`going`, `maybe`, `declined`), `idempotencyKey` | `{ guest: { id, name, status }, managementToken, party }` |
+| `guest` | `managementToken` | `{ party, guest, claims, pledges }`; private address only if host permits |
+| `changeRsvp` | `managementToken`, optional `status`, optional `name` (1–80 chars), key | `{ ok: true }` |
+| `claim` | `managementToken`, `needId`, integer `quantity`, key | `{ id, needId, quantity, status }` |
+| `pledge` | `managementToken`, `amountCents` OR `coverRemaining: true`, optional `anonymous`, `sponsorship`, key | `{ id, amountCents, status: 'pledged' }` |
+| `releaseClaim` | `managementToken`, `claimId`, key | `{ ok: true }` |
+| `editPledge` | `managementToken`, `pledgeId`, `amountCents`, key | Edits a pending pledge only |
+| `cancelPledge` | `managementToken`, `pledgeId`, key | `{ ok: true }` |
+| `confirmAttendance` | `managementToken`, key | Guest independently attests attendance after party starts |
+| `linkGuest` | Signed-in session + `managementToken`, key | Proves control of original capability; links participation to verified account |
+
+A `key` above always means `idempotencyKey`. Guest tokens are 256-bit capabilities: preserve them in a private management link, do not put them in analytics, logs, social metadata, or third-party referrers. Use a URL fragment for management credentials and `Referrer-Policy: no-referrer`. Token revocation is immediate. Invitation rotation does not revoke existing management credentials.
+
+`coverRemaining` snapshots `max(0, budget - confirmed funding)` when the request commits. Pending pledges do not reduce the received funding gap. Opening an external payment URL does not change a pledge to confirmed. Supply values do not count as monetary funding.
+
+### Host operations (authenticated)
+
+| Action | Payload | Result |
+| --- | --- | --- |
+| `createParty` | `title`, `startsAt`, optional `endsAt`, `description`, `generalLocation`, `address`, `capacity`, `budgetCents`, `hostName`, `coverUrl`, `cancellationDeadline`, `needs`, `paymentMethods`, key | `{ party, inviteToken }` |
+| `listParties` | `{}` | `{ parties: PartySnapshot[] }` for current host only |
+| `dashboard` | `partyId` | `{ party, guests, claims, pledges }` with private details |
+| `confirmPayment` | `pledgeId`, key | Host confirms actual received money |
+| `verifyClaim` | `claimId`, optional `fulfilled` (defaults true), key | Records delivered/completed or explicit not fulfilled |
+| `attendance` | `guestId`, boolean `attended`, key | Host check-in; available after start |
+| `rotateInvite` | `partyId`, key | `{ inviteToken }`; immediately invalidates previous invitation |
+| `revokeGuest` | `guestId`, key | Revokes every management token for guest |
+| `updateParty` | `partyId`, optional `title`, `description`, `coverUrl`, `endsAt`, `address`, `generalLocation`, `budgetCents`, `rsvpsOpen`, `addressVisibility` (`guests` or `host`), `status` (`published`, `canceled`, `archived`), key | `{ party }` |
+| `postUpdate` | `partyId`, `message`, key | `{ ok: true }` |
+| `finalize` | `partyId`, key | `{ ok, verifiedParticipants, auraAwarded, party }` |
+| `profile` | `{}` | `{ profile, scores, events }` for authenticated user only |
+| `dispute` | `scoreEventId`, `reason` (10–2000 chars), key | Opens an owned-score dispute |
+
+Needs: `{ kind: 'item' | 'task' | 'expense', title, quantity, allowPartial?, estimatedValueCents?, minutesPerUnit? }`. Estimated value and minutes are **per unit**, set by the host before claims. Expense needs are display-only funding categories; monetary support is party-wide to avoid double counting. Payment methods: `{ label, url }` with HTTPS URL.
+
+PartySnapshot: `{ id, title, description, startsAt, endsAt, generalLocation, address, hostName, hostId, budgetCents, capacity, status, rsvpsOpen, going, confirmedCents, pendingCents, needs, paymentMethods, updates }`. Need snapshots additionally include `id` and `claimedQuantity`. Dashboard guests use `{ id, name, status, attended, attendanceAttested }`; claims use `{ id, guestId, needId, quantity, status }`; pledges use `{ id, guestId, amountCents, status }`.
+
+## Integrity and scoring
+
+The party lock serializes capacity checks, funding snapshots, host finalization, and guest mutations. Item claims also lock the need row before checking remaining quantity. A final available item cannot be claimed by two concurrent transactions. The same guest capability cannot mutate another party's claims or pledges. All tables use RLS; clients cannot directly insert, change, or read sensitive tables. Internal security-definer helpers have execute permissions revoked.
+
+Finalize only runs for a published event after its end (or start plus two hours). It records verified attendance, confirmed payments, explicitly fulfilled or failed commitments. Unreviewed claims and pending money remain neutral. Released commitments are neutral. A host cannot edit a final event. The immutable score ledger has a unique activity key, so retries cannot duplicate awards.
+
+Reputation is a decayed weighted fulfillment rate with a 2-success/2-failure prior and a default 180-day half-life. A number appears after five verified activities; new accounts are Unrated. Prestige awards money, donated supplies, and volunteer hours separately using configurable conversion rates, capped at 1,000 per activity. Aura uses the specified square-root formula, capped at 500 per event, with diminishing returns for events hosted within 30 days. It requires two distinct linked non-host participants with both host-confirmed attendance and independent guest attestation. Host self-contributions are excluded; unlinked or name-only identities cannot produce persistent profile scores or hosting awards. Pending pledges never count. Guest reliability history can be claimed after finalization with the original management credential; current profile linking resolves the ledger without changing immutable records.
+
+A trusted administrator resolves disputes by calling `reverse_score(p_event_id, p_reason)` with a service-role backend, which appends a unique reversal, logs its reason, and refreshes summaries. This function is unavailable to hosts and browsers. Ledger summaries ignore reversed sources rather than awarding duplicate negative values. Configuration lives in server-only `scoring_rules`.
+
+## Honest launch boundaries
+
+This migration must be applied to a real Supabase project and smoke-tested there before claiming a live deployment. SMTP, hosting, gateway limits, and production credentials require project configuration. No card processing or payment-provider settlement verification is claimed. The host manually confirms payment. This release uses explicit guest attestation and caps, not a fraud-detection service; an operations review process is still required for suspicious activity. Public discovery, public score browsing/leaderboards, provider webhooks, photo storage, and automatic dispute adjudication are outside this vertical slice. Do not present those as available actions.
+
+For a true concurrency acceptance test on a running Supabase database, issue two `claim` RPC requests simultaneously from distinct guest tokens for the final available unit, using distinct idempotency keys. Assert exactly one success, one unavailable error, and final claimed quantity equal to one. PGlite executes one connection and does not prove this multi-connection condition; the SQL transaction uses `FOR UPDATE` on the parent party and need to serialize it.
+
+Optional `coverUrl` stores a public HTTPS image URL of at most 2,048 characters. Use a stable public image URL without credentials or secret query strings. Non-HTTPS URLs and host credentials are rejected. The backend does not proxy, fetch, or verify image content. Hosts set `estimatedValueCents` and `minutesPerUnit` per need during creation; guests cannot submit those valuation fields. `hostName` is saved to the authenticated host profile on party creation.
