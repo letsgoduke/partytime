@@ -1,60 +1,76 @@
-# Together · Partytime
+# Partytime · Together
 
 **You host. Everyone helps. Everybody’s welcome.**
 
-Mobile-first private party hosting, built with React, strict TypeScript, Vite, Tailwind, shadcn-style Radix components, Supabase, TanStack Query, React Hook Form, and Zod. This repository is `partytime`; the product name is **Together**.
+A mobile-first app for private gatherings. Hosts make a plan and share one invitation. Guests RSVP without accounts, bring supplies, lend a hand, or pledge money. Showing up is enough; contributions are optional.
 
-## Run locally
+## Where the project stands
 
-Requires Node 22.12+ (Node 24 LTS recommended) and npm.
+**The app is implemented and tested locally. It is not deployed to an AWS account yet.**
+
+The backend now uses AWS throughout. There is no separate hosted-database service to sign up for.
+
+| What it does                              | Where it runs            |
+| ----------------------------------------- | ------------------------ |
+| Website and mobile layouts                | AWS Amplify Hosting      |
+| Host sign-in with email codes             | Amazon Cognito           |
+| Secure guest and host requests            | API Gateway + AWS Lambda |
+| Parties, RSVPs, money records, and scores | Amazon RDS PostgreSQL    |
+| Private database credentials              | AWS Secrets Manager      |
+
+Read [PROJECT_STATUS.md](PROJECT_STATUS.md) for current progress, [CHANGELOG.md](CHANGELOG.md) for the feature history, or the [GitHub commit history](https://github.com/letsgoduke/partytime/commits/main/) for individual changes and fixes.
+
+## What works
+
+- Create, edit, reuse, cancel, and archive parties; preserve a draft through sign-in.
+- Share a private invitation; keep street addresses behind validated guest access.
+- RSVP without an account and manage commitments with a private link.
+- Claim items or volunteer tasks without exceeding available quantities.
+- Pledge money, edit pending pledges, or cover the remaining funding gap.
+- Let hosts confirm money actually received and commitments actually fulfilled.
+- Check attendance, post updates, close RSVPs, and finalize a gathering.
+- Calculate Reputation, Prestige, and Aura from verified evidence, with an immutable correction trail.
+- Link past guest participation to a verified account by proving control of the original private credential.
+
+A pledge is **not** a payment. Opening a payment link never marks money as received. Supplies never count twice as cash. Unreviewed commitments do not become automatic penalties.
+
+## Try it locally
+
+Requires Node 22.12+; Node 24 is recommended.
 
 ```sh
 npm ci
-cp .env.example .env
+npm ci --prefix backend
 npm run dev
 ```
 
-Open the local URL printed by Vite. Without Supabase variables, `/` is an explicitly labeled, browser-local demo. It includes RSVP, optional contributions, pledge editing/cancellation, supply/task claims, host receipt/fulfillment confirmation, and a demo recap. `/profile` shows a labeled sample profile. Demo data never enters a live account and never awards real scores. You can reset it by removing `together-demo-v1` from browser local storage.
+Open the URL printed by Vite. Without AWS configuration, the app explicitly labels its local demonstration data. Demo changes stay on this browser and do not award real scores. The app currently displays **Together** as its product name; renaming it is a separate decision.
 
-## Connect the real backend
+## Put it on AWS
 
-1. Create a Supabase project, enable confirmed email/passwordless sign-in, and configure SMTP.
-2. Copy its project URL and **anon/publishable** key into `.env`:
+1. Review [the AWS deployment guide](docs/aws.md) and [infrastructure details](docs/aws-infrastructure.md).
+2. Prepare an AWS change set for Cognito, Lambda, API Gateway, private RDS, and Secrets Manager. **Review the infrastructure and ongoing charges before executing it.** No cloud resources have been created here.
+3. Invoke the private migration task with an authorized deployment identity.
+4. Connect `letsgoduke/partytime` to Amplify. Copy the five public stack outputs into the build environment; `.env.example` lists their names.
+5. Run the live acceptance checklist before inviting real guests.
 
-   ```dotenv
-   VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-   VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
-   ```
+There are no browser database passwords or AWS secret keys. Never put private credentials into `VITE_` variables. AWS setup needs account access, a domain/origin, available database capacity, and working Cognito email delivery. Local checks cannot prove these cloud services are live.
 
-3. Apply `supabase/migrations/202610240001_partytime.sql` using Supabase CLI (`supabase link --project-ref YOUR_REF`, then `supabase db push`) or the SQL editor on a new project. Never rerun an already-applied migration manually. For local Supabase, use `supabase start` and `supabase db reset` against a disposable local database.
-4. Configure the Auth Site URL and exact allowed redirects (`http://localhost:5173/create`, `/profile`, `/parties`, `/manage`, and your host dashboard URL during local testing; corresponding HTTPS URLs in production). Avoid unrestricted production callback wildcards. PKCE sign-in needs the same browser that requested the link.
-5. Restart Vite after changing environment variables. Create a future party at `/create`, sign in, publish, and share its invitation. The publish form preserves its draft while authentication completes.
-6. Follow [deployment verification](docs/deployment.md) before accepting real guests.
-
-**Never place a Supabase service-role key in a `VITE_` variable.** Public invitation URLs and private guest-management credentials are separate. The management credential is a 256-bit capability in a URL fragment; keep it private. The backend stores token hashes. Client-held invitation tokens are stored only for the current browser session. Hosts can regenerate a lost invitation; doing so invalidates the old invitation. Guest management links continue to work independently.
-
-## Features and boundaries
-
-Implemented: private invitations; email-link host authentication; draft preservation; party creation/editing/reuse; address privacy; capacity enforcement; anonymous-account RSVP; secure guest-management links; item/task claims with atomic quantity checks; pending money pledges and remaining-gap sponsorship snapshots; external host-approved HTTPS payment links; manual host payment/fulfillment confirmation; announcements; RSVP closure; cancellation/archive; attendance check-in and independent guest attestation; finalization; server-side Reputation/Prestige/Aura; immutable ledger, administrator reversals, correction requests, and credential-proven account linking.
-
-Money stays in integer cents. Pending pledges do **not** become received funds when a payment link is opened. Supplies do **not** count toward cash funding. Unreviewed attendance or commitments do **not** create automatic penalties. Persistent scores require a verified account. Guest display names never establish identity.
-
-This is a tested vertical slice, **not a claim that the entire original product roadmap is launched**. Deferred: uploaded photo storage (HTTPS photo URLs are supported), sponsor recognition and expense-specific sponsorship allocation, bulk verification UI, richer achievement/milestone automation, attendee-count privacy controls, public discovery, automatic payment verification, and automated fraud/dispute adjudication. Exact quantity claims currently use one unit per click; the server supports partial quantities. PWA metadata/icons are included; private data is never cached offline, and offline editing is not supported. A configured hosted project and real email delivery have not been exercised by local tests.
-
-## Checks
+## Quality checks
 
 ```sh
-npm run check            # strict TypeScript, production build, unit/component + PostgreSQL tests
-npx playwright install chromium
-npm run test:e2e         # demo browser flows, five mobile widths, keyboard and axe checks
-npm run test:contract    # separate simulated PostgREST browser contract; no real Auth claimed
+npm run check            # production build, frontend tests, PostgreSQL security tests, Lambda tests
+npm run test:e2e         # demo flows, five mobile widths, keyboard and accessibility checks
+npm run test:contract    # simulated AWS HTTP responses; not a live AWS integration
 npm run format:check
 ```
 
-Close any existing Vite instance on port 5173 before running `test:contract`, which starts a separate configured server. Tests do not require production credentials. The database runner uses PGlite, PostgreSQL compiled to WebAssembly, with pgcrypto and isolated Supabase auth fixtures. It validates real SQL authorization and accounting behavior, but not hosted Supabase services or simultaneous independent database connections.
+Install Chromium once with `npx playwright install chromium`. Stop any existing Vite process on port 5173 before `test:contract`. Database checks use a real PostgreSQL engine through PGlite without connecting to production. [Testing details](docs/testing.md) describe exact coverage and limits.
 
-For your AWS host, follow [AWS Amplify setup](docs/aws.md). The deployment pipeline refuses missing or unsafe frontend credentials.
+The Amplify build runs `npm run check`. An optional GitHub Actions template lives in `ci/github-actions-check.yml`; enabling it requires workflow-scoped GitHub authorization, which the currently connected credential does not have.
 
-The optional GitHub Actions template is in `ci/github-actions-check.yml`. To enable it, copy it into `.github/workflows/check.yml` using a GitHub credential with workflow permission. The current connected credential cannot publish workflow files; AWS Amplify runs the strict build/unit/database checks independently.
+## Still on the roadmap
 
-See [architecture](docs/architecture.md), [backend setup/API/security](docs/backend.md), [scoring](docs/scoring.md), [testing](docs/testing.md), and [deployment](docs/deployment.md).
+Photo uploads (HTTPS photo URLs already work), expense-specific sponsorship, public sponsor recognition, bulk verification, richer achievements, and attendee-count privacy controls remain deferred. Public discovery and automatic payment settlement are outside the current private-party release. PWA installation assets are included; private party information is never cached for offline editing.
+
+Technical references: [architecture](docs/architecture.md), [API contract](docs/backend.md), [scoring](docs/scoring.md), [backend operations](backend/README.md).

@@ -59,9 +59,9 @@ The stack outputs public IDs/URLs only. Export the exact browser variables after
 aws cloudformation describe-stacks --stack-name partytime-prod --region us-east-1 --output json | node infrastructure/frontend-env.mjs
 ```
 
-Copy the six `VITE_` values into Amplify environment variables and rebuild. They are public configuration: `VITE_AWS_API_URL`, `VITE_AWS_REGION`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_COGNITO_DOMAIN`. Keep API URL/domain values without trailing slashes. No database endpoint, secret ARN, password, or private AWS credential belongs in the browser. Amplify must rewrite `/auth/callback`, invitations, management links, and other SPA routes to `index.html`.
+Copy the five `VITE_` values into Amplify environment variables and rebuild. They are public configuration: `VITE_AWS_API_URL`, `VITE_AWS_REGION`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_COGNITO_DOMAIN`. Keep API URL/domain values without trailing slashes. No database endpoint, secret ARN, password, or private AWS credential belongs in the browser. Amplify must rewrite `/auth/callback`, invitations, management links, and other SPA routes to `index.html`.
 
-Before launch, exercise a real OTP login, party creation, private invitation, no-account RSVP, final-item concurrent claims, pending pledge, host-only payment confirmation, credential-based account linking, and finalization. Check that `/host` rejects no token/wrong issuer/wrong audience/unverified email and that guest requests cannot mutate another party. Live cloud smoke tests require the deployed resources and verified sender; local tests do not assert a deployment exists. Existing Supabase data is not automatically migrated by this stack.
+Before launch, exercise a real OTP login, party creation, private invitation, no-account RSVP, final-item concurrent claims, pending pledge, host-only payment confirmation, credential-based account linking, and finalization. Check that `/host` rejects no token/wrong issuer/wrong audience/unverified email and that guest requests cannot mutate another party. Live cloud smoke tests require the deployed resources and verified sender; local tests do not assert a deployment exists. No live legacy backend was deployed. Local demonstration data remains on its original device.
 
 ## Costs, availability, and retention
 

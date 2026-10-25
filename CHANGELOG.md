@@ -1,8 +1,11 @@
 # Product changes
 
-## AWS migration — in progress
+## AWS migration — implemented, not yet deployed
 
-- Move sign-in, secure requests, and database hosting to AWS.
+- Added Cognito email-code sign-in and separate guest/host API Gateway routes.
+- Added Lambda handlers, private encrypted RDS, Secrets Manager credentials, and an IAM-only migration task.
+- Ported database privacy/accounting/scoring rules to AWS identities.
+- Removed the previous backend SDK and deployment files.
 - Preserve guest RSVPs without accounts, private management links, separate pledges/receipts, atomic item claims, and verified scoring.
 - Add a plain-language project status page and smaller feature/fix commits.
 

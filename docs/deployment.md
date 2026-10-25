@@ -1,34 +1,27 @@
-# Deployment
+# Release and deployment
 
-## AWS hosting
+See [the AWS launch checklist](aws.md) for deployment order and [the infrastructure guide](aws-infrastructure.md) for commands, privileges, costs, and retained resources.
 
-The selected target is AWS. Follow [AWS Amplify setup](aws.md); the repo includes its build specification, security headers, and SPA rewrite rule. Supabase remains the backend.
+## Gates before a real launch
 
-## Other static hosts
+These require an actual AWS deployment. They have not been claimed by local tests.
 
-Deploy this repository to Vercel or Netlify with build command `npm run build` and output directory `dist`. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as build-time variables. Rebuild when those values change. Vercel SPA rewrites and security headers are in `vercel.json`; Netlify equivalents are in `public/_redirects` and `public/_headers`. Configure HTTPS and a real production domain before distributing invitations.
+- Receive a real Cognito email code, complete sign-in, return to a saved draft, and publish a party.
+- Load an invitation directly in an isolated browser, RSVP without signing up, save the private management link, and recover commitments through it.
+- Confirm full addresses and guest records are unavailable without the appropriate credential.
+- Race two independent guest sessions for the final item and final capacity slot; exactly one succeeds.
+- Drop a response after a successful mutation, retry, and verify one RSVP/pledge/award exists.
+- Confirm `/host` rejects missing, expired, wrong-issuer, wrong-audience, and unverified-email tokens.
+- Confirm a guest cannot impersonate a host or access another party's commitments.
+- Open the external payment link; funding must remain pending until the host confirms receipt.
+- After the event, attest/check attendance, verify fulfillment, finalize, link prior guest participation, and review the three separate score systems.
+- Submit a correction request and use an authorized administrator to append a reversal.
+- Check deployed CSP/no-referrer headers, real mobile layouts, database backups, credential rotation, and logging redaction.
 
-Do not deploy only a nested workspace parent: the project root is the `partytime` repository. Preview and production should use separate Supabase projects. Never apply disposable SQL fixtures to a real project.
+## Release procedure
 
-## Supabase
+Run `npm run check`, browser tests, and infrastructure validation. Deploy a staging stack, complete the acceptance flow, then promote the reviewed static build. The Amplify build performs build/unit/database/Lambda checks. The optional GitHub Actions template is not active until a workflow-authorized user installs it.
 
-Apply migrations, configure verified email OTP/magic links and SMTP, production Site URL, and exact callback URLs. Confirm PKCE with the same browser. Configure gateway/IP rate limiting and CAPTCHA; database capability throttling is not an ingress abuse-defense replacement. Failed SQL transactions roll back their rate counters. Database functions cannot reliably trust client-submitted IP addresses.
+Keep the previous Amplify deployment for rollback. Back up the database before future migrations. Never edit an applied migration: append a versioned migration and register it with the migration task. Ledger corrections append reversals rather than deleting history. API request roles must never gain migration or administrative score privileges.
 
-Provision an administrative process for score disputes. The browser cannot call `reverse_score`; an authenticated, audited administrative backend with the service-role credential must invoke it after reviewing evidence. Never put that key in a browser bundle or client environment variable.
-
-## Launch gates requiring a configured project
-
-- Real email delivery, callback session recovery, and successful host publication.
-- Invitation deep links after a cold navigation; management-link recovery and proof-based linking.
-- Cross-account/cross-party denial using actual Supabase roles and JWTs.
-- Two independent connections racing for the final supply unit and final capacity slot.
-- Dropped-response retry yielding one RSVP/pledge/score event.
-- Real external payment URL usability; opening the URL must not confirm payment.
-- Post-event attendance, fulfillment, finalization, score summaries, correction request and trusted reversal.
-- Production headers, no-referrer behavior, secret scan, mobile review, backup/restore and logging redaction.
-
-These are explicit launch requirements, not tests claimed to have been run without credentials. Local PostgreSQL and simulated HTTP tests reduce risk but do not replace them.
-
-## Release and recovery
-
-Run all local checks, deploy a preview, complete the staged acceptance flow, then promote that exact build. Keep the previous static deployment for rollback. Take a database backup before future migrations. Prefer additive follow-up migrations over editing an already-applied production migration. Keep score history append-only; corrections append reversals. Watch RPC errors, delivery failures and suspicious scoring without logging private invite or management tokens.
+The stack retains the database, credentials, identity pool, and dependent private network on deletion; read the explicit cleanup procedure before removing resources. No live resources have been created during local implementation.
