@@ -10,7 +10,8 @@ try {
   await database.exec(await readFile(new URL('../migrations/001_partytime.sql', import.meta.url), 'utf8'));
   console.log('PostgreSQL migration applied.');
   await database.exec(await readFile(new URL('./security.sql', import.meta.url), 'utf8'));
-  console.log('Database integration, privacy, authorization, ledger, linking, and replay assertions passed.');
+  await database.exec(await readFile(new URL('./runtime.sql', import.meta.url), 'utf8'));
+  console.log('Database integration, AWS runtime privileges, privacy, ledger, linking, and replay assertions passed.');
 } catch (error) {
   console.error(error.message);
   if (error.where) console.error(error.where);
