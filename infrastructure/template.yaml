@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Partytime private PostgreSQL, API, and passwordless Cognito authentication.
+
+Parameters:
+  AppOrigin:
+    Type: String
+    Description: Exact production frontend origin, HTTPS without a trailing slash.
+    AllowedPattern: '^https://[^/?#]+$'
+  CognitoDomainPrefix:
+    Type: String
+    Description: Regionally unique Cognito managed login domain prefix.
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$'
+  SesIdentityArn:
+    Type: String
+    Default: ''
+    Description: Optional verified SES identity ARN in a Cognito-supported email region.
+    AllowedPattern: '^$|^arn:aws:ses:[a-z0-9-]+:[0-9]{12}:identity/.+$'
+  SesFromAddress:
+    Type: String
+    Default: ''
+    Description: Verified sender, required when SesIdentityArn is provided.
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedValues: [db.t4g.micro, db.t4g.small, db.t4g.medium]
+  DatabaseMultiAZ:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set true for production availability; increases database charges.
+
+Rules:
+  SesSenderRequired:
+    Assertions:
+      - Assert: !Or [!Equals [!Ref SesIdentityArn, ''], !Not [!Equals [!Ref SesFromAddress, '']]]
+        AssertDescription: Set SesFromAddress when providing SesIdentityArn.
+
+Conditions:
+  UseSes: !Not [!Equals [!Ref SesIdentityArn, '']]
+  UseMultiAZ: !Equals [!Ref DatabaseMultiAZ, 'true']
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-hosts'
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: 'OFF'
+      Policies:
+        SignInPolicy:
+          AllowedFirstAuthFactors: [EMAIL_OTP]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      EmailConfiguration: !If
+        - UseSes
+        - EmailSendingAccount: DEVELOPER
+          SourceArn: !Ref SesIdentityArn
+          From: !Ref SesFromAddress
+        - EmailSendingAccount: COGNITO_DEFAULT
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+
+  BrowserClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: Partytime browser
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !Sub '${AppOrigin}/auth/callback'
+        - http://localhost:5173/auth/callback
+      DefaultRedirectURI: !Sub '${AppOrigin}/auth/callback'
+      LogoutURLs:
+        - !Sub '${AppOrigin}/'
+        - http://localhost:5173/
+      ReadAttributes: [email, email_verified, name]
+      WriteAttributes: [email, name]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  LoginDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+      ManagedLoginVersion: 2
+
+  LoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: LoginDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref BrowserClient
+      UseCognitoProvidedValues: true
+
+  PrivateVpc:
+    Type: AWS::EC2::VPC
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private'
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VpcId: !Ref PrivateVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.42.0.0/24
+      MapPublicIpOnLaunch: false
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VpcId: !Ref PrivateVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: false
+
+  # Explicit isolated route tables: no Internet Gateway and no NAT Gateway.
+  PrivateRoutes:
+    Type: AWS::EC2::RouteTable
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VpcId: !Ref PrivateVpc
+  RouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRoutes
+  RouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRoutes
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      GroupDescription: Partytime functions, with explicitly restricted outbound access.
+      VpcId: !Ref PrivateVpc
+      SecurityGroupEgress:
+        # A harmless placeholder suppresses EC2's default allow-all egress.
+        - IpProtocol: tcp
+          FromPort: 1
+          ToPort: 1
+          CidrIp: 127.0.0.1/32
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      GroupDescription: PostgreSQL reachable only by the Partytime Lambda security group.
+      VpcId: !Ref PrivateVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 1
+          ToPort: 1
+          CidrIp: 127.0.0.1/32
+
+  SecretsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTPS Secrets Manager access only from Partytime functions.
+      VpcId: !Ref PrivateVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 1
+          ToPort: 1
+          CidrIp: 127.0.0.1/32
+
+  LambdaToDatabase:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      DestinationSecurityGroupId: !Ref DatabaseSecurityGroup
+  LambdaToSecrets:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref SecretsSecurityGroup
+
+  SecretsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref PrivateVpc
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SecurityGroupIds: [!Ref SecretsSecurityGroup]
