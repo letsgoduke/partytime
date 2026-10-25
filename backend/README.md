@@ -15,16 +15,16 @@ Lambda does not accept score totals, payment confirmation, profile identity, or 
 
 ## Environment
 
-| Variable | API Lambda | Migration Lambda |
-| --- | --- | --- |
-| `DB_HOST`, `DB_PORT` (5432), `DB_NAME` | Private RDS endpoint/database | Same |
-| `DB_SECRET_ARN` | Secret containing restricted login `partytime_runtime` and password | RDS migration-owner secret |
-| `APP_DB_SECRET_ARN` | Omit | Restricted runtime secret to provision |
-| `RDS_CA_PATH` | `/var/runtime/ca-cert.pem` for Node22 ZIP Lambda | Same |
-| `COGNITO_ISSUER` | Exact Cognito user-pool issuer URL | Omit |
-| `COGNITO_CLIENT_ID` | SPA app client ID | Omit |
-| `APP_ORIGIN` | Exact HTTPS frontend origin | Omit |
-| `ALLOWED_ORIGINS` | Optional comma-separated exact origins; no wildcard | Omit |
+| Variable                               | API Lambda                                                          | Migration Lambda                       |
+| -------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| `DB_HOST`, `DB_PORT` (5432), `DB_NAME` | Private RDS endpoint/database                                       | Same                                   |
+| `DB_SECRET_ARN`                        | Secret containing restricted login `partytime_runtime` and password | RDS migration-owner secret             |
+| `APP_DB_SECRET_ARN`                    | Omit                                                                | Restricted runtime secret to provision |
+| `RDS_CA_PATH`                          | `/var/runtime/ca-cert.pem` for Node22 ZIP Lambda                    | Same                                   |
+| `COGNITO_ISSUER`                       | Exact Cognito user-pool issuer URL                                  | Omit                                   |
+| `COGNITO_CLIENT_ID`                    | SPA app client ID                                                   | Omit                                   |
+| `APP_ORIGIN`                           | Exact HTTPS frontend origin                                         | Omit                                   |
+| `ALLOWED_ORIGINS`                      | Optional comma-separated exact origins; no wildcard                 | Omit                                   |
 
 Production permits only `APP_ORIGIN` by default. The infrastructure `AllowLocalhost` parameter defaults false; explicitly enabling it adds exactly `http://localhost:5173` to API CORS, Cognito callbacks/logout, and `ALLOWED_ORIGINS`. The Lambda reflects only a validated allowed Origin. Requests with no Origin are permitted for authenticated CLI/nonbrowser clients.
 

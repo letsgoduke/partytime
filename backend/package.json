@@ -2,7 +2,14 @@
   "name": "partytime-aws-backend",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
-  "scripts": { "test": "node --test tests/*.node.mjs" },
-  "dependencies": { "@aws-sdk/client-secrets-manager": "^3.0.0", "pg": "^8.16.3" }
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.node.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "pg": "^8.16.3"
+  }
 }
