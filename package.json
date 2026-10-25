@@ -13,14 +13,13 @@
     "format": "prettier --write src tests scripts *.ts *.json docs README.md",
     "format:check": "prettier --check src tests scripts *.ts *.json docs README.md",
     "check": "npm run build && npm test && npm run test:db",
-    "test:contract": "TEST_LIVE_CONTRACT=1 VITE_SUPABASE_URL=https://contract.supabase.co VITE_SUPABASE_ANON_KEY=contract-test-key playwright test tests/live-contract.spec.ts --workers=1",
+    "test:contract": "TEST_LIVE_CONTRACT=1 VITE_AWS_API_URL=https://contract.execute-api.us-east-1.amazonaws.com VITE_AWS_REGION=us-east-1 VITE_COGNITO_USER_POOL_ID=us-east-1_contract VITE_COGNITO_CLIENT_ID=contractclient VITE_COGNITO_DOMAIN=https://contract.auth.us-east-1.amazoncognito.com playwright test tests/live-contract.spec.ts --workers=1",
     "icons": "node scripts/generate-icons.mjs",
     "validate:env": "node scripts/validate-env.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-slot": "^1.2.3",
-    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.90.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

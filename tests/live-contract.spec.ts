@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-// This suite exercises the browser against the real PostgREST wire shape. It does
-// not replace hosted Supabase/Auth acceptance tests; SQL security is tested separately.
+// This suite exercises the browser against the real AWS API wire shape. It does
+// not replace deployed AWS/Cognito acceptance tests; SQL security is tested separately.
 const privateToken = "a".repeat(64);
 const invitation = "b".repeat(64);
 const party = {
@@ -35,7 +35,7 @@ test("guest capability stays private when sharing an invitation", async ({
     "Run npm run test:contract for the configured API adapter.",
   );
   await page.route(
-    "https://contract.supabase.co/rest/v1/rpc/party_api",
+    "https://contract.execute-api.us-east-1.amazonaws.com/guest",
     async (route) => {
       const { action } = route.request().postDataJSON();
       const data =
@@ -57,7 +57,7 @@ test("guest capability stays private when sharing an invitation", async ({
                   ],
                 }
               : { ok: true };
-      await route.fulfill({ json: data });
+      await route.fulfill({ json: { data } });
     },
   );
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
