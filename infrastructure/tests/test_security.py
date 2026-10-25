@@ -1,5 +1,6 @@
 """Static deployment guardrails; run with cfn-lint installed, without AWS credentials."""
 import pathlib
+import re
 import unittest
 from cfnlint.decode import decode
 
@@ -70,6 +71,13 @@ class InfrastructureSecurityTests(unittest.TestCase):
         self.assertEqual(client['TokenValidityUnits']['IdToken'], 'minutes')
         self.assertIn('ALLOW_USER_AUTH', client['ExplicitAuthFlows'])
         self.assertEqual(self.properties('LoginDomain')['ManagedLoginVersion'], 2)
+
+    def test_database_version_accepts_real_postgresql_16_minor_numbers(self):
+        pattern = self.template['Parameters']['DatabaseEngineVersion']['AllowedPattern']
+        self.assertIsNotNone(re.fullmatch(pattern, '16.14'))
+        self.assertIsNotNone(re.fullmatch(pattern, '16.15'))
+        self.assertIsNone(re.fullmatch(pattern, '17.1'))
+        self.assertNotIn('Default', self.template['Parameters']['DatabaseEngineVersion'])
 
     def test_email_code_sign_in_requires_a_verified_ses_sender(self):
         email = self.properties('UserPool')['EmailConfiguration']
