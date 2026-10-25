@@ -7,6 +7,11 @@ Parameters:
     Type: String
     Description: Exact production frontend origin, HTTPS without a trailing slash.
     AllowedPattern: '^https://[^/?#]+$'
+  AllowLocalhost:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Opt in to localhost:5173 CORS and OAuth callbacks for development.
   CognitoDomainPrefix:
     Type: String
     Description: Regionally unique Cognito managed login domain prefix.
@@ -24,7 +29,6 @@ Parameters:
     Description: Verified sender, required when SesIdentityArn is provided.
   DatabaseEngineVersion:
     Type: String
-    Default: '16.15'
     AllowedPattern: '^16\.[0-9]+$'
     Description: Supported PostgreSQL 16 minor version; verify availability in the target region.
   DatabaseInstanceClass:
@@ -46,6 +50,7 @@ Rules:
 Conditions:
   UseSes: !Not [!Equals [!Ref SesIdentityArn, '']]
   UseMultiAZ: !Equals [!Ref DatabaseMultiAZ, 'true']
+  IncludeLocalhost: !Equals [!Ref AllowLocalhost, 'true']
 
 Resources:
   UserPool:
@@ -97,13 +102,15 @@ Resources:
       AllowedOAuthFlows: [code]
       AllowedOAuthScopes: [openid, email, profile]
       SupportedIdentityProviders: [COGNITO]
-      CallbackURLs:
-        - !Sub '${AppOrigin}/auth/callback'
-        - http://localhost:5173/auth/callback
+      CallbackURLs: !If
+        - IncludeLocalhost
+        - [!Sub '${AppOrigin}/auth/callback', 'http://localhost:5173/auth/callback']
+        - [!Sub '${AppOrigin}/auth/callback']
       DefaultRedirectURI: !Sub '${AppOrigin}/auth/callback'
-      LogoutURLs:
-        - !Sub '${AppOrigin}/'
-        - http://localhost:5173/
+      LogoutURLs: !If
+        - IncludeLocalhost
+        - [!Sub '${AppOrigin}/', 'http://localhost:5173/']
+        - [!Sub '${AppOrigin}/']
       ReadAttributes: [email, email_verified, name]
       WriteAttributes: [email, name]
       PreventUserExistenceErrors: ENABLED
@@ -400,7 +407,10 @@ Resources:
       StageName: '$default'
       Description: Private host management and capability-protected guest operations.
       CorsConfiguration:
-        AllowOrigins: [!Ref AppOrigin, 'http://localhost:5173']
+        AllowOrigins: !If
+          - IncludeLocalhost
+          - [!Ref AppOrigin, 'http://localhost:5173']
+          - [!Ref AppOrigin]
         AllowMethods: [POST, OPTIONS]
         AllowHeaders: [content-type, authorization]
         MaxAge: 600
@@ -454,6 +464,10 @@ Resources:
           COGNITO_ISSUER: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
           COGNITO_CLIENT_ID: !Ref BrowserClient
           APP_ORIGIN: !Ref AppOrigin
+          ALLOWED_ORIGINS: !If
+            - IncludeLocalhost
+            - !Join [',', [!Ref AppOrigin, 'http://localhost:5173']]
+            - !Ref AppOrigin
       Events:
         HostRequest:
           Type: HttpApi
