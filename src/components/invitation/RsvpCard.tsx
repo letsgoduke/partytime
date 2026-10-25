@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 
 interface RsvpCardProps {
   goingCount: number;
+  demo?: boolean;
   hasGuest: boolean;
   canManage: boolean;
   onRsvp: () => void;
@@ -18,6 +19,7 @@ interface RsvpCardProps {
 
 export function RsvpCard({
   goingCount,
+  demo = false,
   hasGuest,
   canManage,
   onRsvp,
@@ -34,20 +36,22 @@ export function RsvpCard({
         <br />
         with your name on it.
       </h2>
-      <p>Friends, food, and a Friday well spent.</p>
+      <p>Friends, food, and time well spent.</p>
       <div className="attendee-row">
-        <div className="avatar-stack">
-          {["J", "S", "M", "T"].map((a, i) => (
-            <span
-              key={a}
-              style={{
-                background: ["#efd6c1", "#cbdcd0", "#e6c5cf", "#d8d8f0"][i],
-              }}
-            >
-              {a}
-            </span>
-          ))}
-        </div>
+        {demo && (
+          <div className="avatar-stack" aria-label="Sample guest avatars">
+            {["J", "S", "M", "T"].map((a, i) => (
+              <span
+                key={a}
+                style={{
+                  background: ["#efd6c1", "#cbdcd0", "#e6c5cf", "#d8d8f0"][i],
+                }}
+              >
+                {a}
+              </span>
+            ))}
+          </div>
+        )}
         <div>
           <strong>{goingCount} people coming</strong>
           <span>It’s going to be a good one.</span>

@@ -2,23 +2,23 @@
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 revoke create on schema public from public,anon,authenticated;
-create table public.profiles (id uuid primary key references auth.users on delete cascade, display_name text not null default 'Party friend', created_at timestamptz not null default now());
+create table public.profiles (id uuid primary key references auth.users on delete cascade, display_name text not null default 'Party friend' check(length(btrim(display_name)) between 1 and 80), created_at timestamptz not null default now());
 create table public.parties (
  id uuid primary key default gen_random_uuid(), host_id uuid not null references public.profiles,
- title text not null check(length(title) between 1 and 120), cover_url text check(cover_url is null or (length(cover_url)<=2048 and cover_url ~ '^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?(/[^[:space:]]*)?$')), description text not null default '',
- starts_at timestamptz not null, ends_at timestamptz, general_location text not null default '', address text not null default '',
+ title text not null check(length(btrim(title)) between 1 and 120), cover_url text check(cover_url is null or (length(cover_url)<=2048 and cover_url ~ '^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?(/[^[:space:]]*)?$')), description text not null default '' check(length(description)<=5000),
+ starts_at timestamptz not null, ends_at timestamptz, general_location text not null default '' check(length(general_location)<=200), address text not null default '' check(length(address)<=500),
  address_visibility text not null default 'guests' check(address_visibility in ('guests','host')),
  budget_cents integer not null default 0 check(budget_cents between 0 and 100000000), capacity integer check(capacity > 0),
  status text not null default 'published' check(status in ('draft','published','canceled','finalized','archived')),
  rsvps_open boolean not null default true, cancellation_deadline timestamptz, created_at timestamptz not null default now(), finalized_at timestamptz,
  check(ends_at is null or ends_at >= starts_at));
 create table public.party_invites (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, token_hash text unique not null, revoked_at timestamptz, created_at timestamptz not null default now());
-create table public.guests (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, profile_id uuid references public.profiles, display_name text not null check(length(display_name) between 1 and 80), rsvp text not null check(rsvp in ('going','maybe','declined')), attendance_attested boolean not null default false, created_at timestamptz not null default now(), unique(party_id,profile_id));
+create table public.guests (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, profile_id uuid references public.profiles, display_name text not null check(length(btrim(display_name)) between 1 and 80), rsvp text not null check(rsvp in ('going','maybe','declined')), attendance_attested boolean not null default false, created_at timestamptz not null default now(), unique(party_id,profile_id));
 create table public.guest_access_tokens (id uuid primary key default gen_random_uuid(), guest_id uuid not null references public.guests on delete cascade, token_hash text unique not null, revoked_at timestamptz, created_at timestamptz not null default now());
-create table public.needs (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, kind text not null check(kind in ('item','task','expense')), title text not null check(length(title) between 1 and 160), quantity integer not null default 1 check(quantity between 1 and 10000), allow_partial boolean not null default true, estimated_value_cents integer not null default 0 check(estimated_value_cents between 0 and 1000000), minutes_per_unit integer not null default 0 check(minutes_per_unit between 0 and 1440));
+create table public.needs (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, kind text not null check(kind in ('item','task','expense')), title text not null check(length(btrim(title)) between 1 and 160), quantity integer not null default 1 check(quantity between 1 and 10000), allow_partial boolean not null default true, estimated_value_cents integer not null default 0 check(estimated_value_cents between 0 and 1000000), minutes_per_unit integer not null default 0 check(minutes_per_unit between 0 and 1440));
 create table public.claims (id uuid primary key default gen_random_uuid(), guest_id uuid not null references public.guests, need_id uuid not null references public.needs, quantity integer not null check(quantity > 0), status text not null default 'claimed' check(status in ('claimed','delivered','completed','released','not_fulfilled')), created_at timestamptz not null default now());
 create table public.pledges (id uuid primary key default gen_random_uuid(), guest_id uuid not null references public.guests, party_id uuid not null references public.parties, amount_cents integer not null check(amount_cents between 1 and 100000000), status text not null default 'pledged' check(status in ('pledged','payment_initiated','confirmed','canceled','disputed')), anonymous boolean not null default false, sponsorship boolean not null default false, created_at timestamptz not null default now());
-create table public.payment_methods (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, label text not null, url text not null check(url ~ '^https://[^[:space:]]+$'));
+create table public.payment_methods (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties on delete cascade, label text not null check(length(btrim(label)) between 1 and 80), url text not null check(length(url)<=2048 and url ~ '^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?(/[^[:space:]]*)?$'));
 create table public.attendance_records (guest_id uuid primary key references public.guests, attended boolean not null, verified_by uuid not null references public.profiles, verified_at timestamptz not null default now());
 create table public.fulfillment_records (id uuid primary key default gen_random_uuid(), claim_id uuid unique references public.claims, pledge_id uuid unique references public.pledges, verified_by uuid not null references public.profiles, verified_at timestamptz not null default now(), check(num_nonnulls(claim_id,pledge_id)=1));
 create table public.party_updates (id uuid primary key default gen_random_uuid(), party_id uuid not null references public.parties, message text not null check(length(message) between 1 and 2000), created_at timestamptz not null default now());
@@ -101,8 +101,10 @@ declare
  v_result jsonb; v_token text; v_invite text; v_scope text; v_key uuid; v_used integer; v_amount integer; v_quantity integer;
  v_uid uuid:=auth.uid(); v_id uuid; v_attendees integer; v_funding numeric; v_supplies numeric; v_aura numeric; v_rules scoring_rules%rowtype; v_n jsonb; v_existing_action text; v_existing_hash text;
 begin
- if action not in ('invitation','rsvp','guest','claim','pledge','releaseClaim','cancelPledge','editPledge','changeRsvp','confirmAttendance','linkGuest','createParty','dashboard','listParties','confirmPayment','verifyClaim','attendance','finalize','rotateInvite','updateParty','postUpdate','profile','dispute','revokeGuest') then raise exception 'Unknown action' using errcode='22023'; end if;
- -- Rate limit per verified capability (plus a global anonymous bound). No IP trust in client payloads.
+ if action is null or action not in ('invitation','rsvp','guest','claim','pledge','releaseClaim','cancelPledge','editPledge','changeRsvp','confirmAttendance','linkGuest','createParty','dashboard','listParties','confirmPayment','verifyClaim','attendance','finalize','rotateInvite','updateParty','postUpdate','profile','dispute','revokeGuest') then raise exception 'Unknown action' using errcode='22023'; end if;
+ if payload is null or jsonb_typeof(payload)<>'object' or octet_length(payload::text)>100000 then raise exception 'Payload must be an object under 100KB' using errcode='22023'; end if;
+ if v_uid is not null and not exists(select 1 from auth.users u where u.id=v_uid and u.email_confirmed_at is not null) then raise exception 'A verified email account is required' using errcode='42501'; end if;
+ -- Limits successful calls per account/capability; failed SQL transactions roll back counters. Ingress limits are mandatory.
  v_scope:=case when v_uid is not null then v_uid::text else encode(digest(coalesce(payload->>'managementToken',payload->>'inviteToken','anonymous'),'sha256'),'hex') end;
  insert into api_rate_limits(scope,window_start,requests) values(v_scope,now(),1)
  on conflict(scope) do update set requests=case when api_rate_limits.window_start < now()-interval '1 minute' then 1 else api_rate_limits.requests+1 end,window_start=case when api_rate_limits.window_start < now()-interval '1 minute' then now() else api_rate_limits.window_start end returning requests into v_used;
@@ -111,11 +113,15 @@ begin
  select g.* into v_guest from guests g join guest_access_tokens t on t.guest_id=g.id where t.token_hash=encode(digest(coalesce(payload->>'managementToken',''),'sha256'),'hex') and t.revoked_at is null;
  if not found then raise exception 'Invalid or revoked guest access' using errcode='42501'; end if;
  select * into v_party from parties where id=v_guest.party_id for update;
+ -- Re-read AFTER the lock: another transaction may have revoked the token or linked this guest while we waited.
+ select g.* into v_guest from guests g join guest_access_tokens t on t.guest_id=g.id where g.party_id=v_party.id and t.token_hash=encode(digest(coalesce(payload->>'managementToken',''),'sha256'),'hex') and t.revoked_at is null;
+ if not found then raise exception 'Invalid or revoked guest access' using errcode='42501'; end if;
  elsif action in ('invitation','rsvp') then
  select p.* into v_party from parties p join party_invites i on i.party_id=p.id where i.token_hash=encode(digest(coalesce(payload->>'inviteToken',''),'sha256'),'hex') and i.revoked_at is null and p.status in ('published','finalized');
  if not found then raise exception 'Invitation unavailable' using errcode='42501'; end if;
  -- Lock the party, serializing RSVP capacity and funding-gap snapshots.
  select * into v_party from parties where id=v_party.id for update;
+ if v_party.status not in ('published','finalized') or not exists(select 1 from party_invites i where i.party_id=v_party.id and i.token_hash=encode(digest(coalesce(payload->>'inviteToken',''),'sha256'),'hex') and i.revoked_at is null) then raise exception 'Invitation unavailable' using errcode='42501'; end if;
  else
  if v_uid is null then raise exception 'Sign in required' using errcode='42501'; end if;
  insert into profiles(id,display_name) values(v_uid,left(coalesce(nullif(payload->>'hostName',''),'Party friend'),80)) on conflict do nothing;
@@ -188,7 +194,7 @@ begin
  update guests set rsvp=coalesce(payload->>'status',rsvp),display_name=coalesce(btrim(payload->>'name'),display_name) where id=v_guest.id;
  v_result:='{"ok":true}';
  elsif action='confirmAttendance' then
- if v_party.starts_at>now() or v_party.status='canceled' then raise exception 'Attendance can only be attested after the event starts'; end if;
+ if v_party.starts_at>now() or v_party.status<>'published' then raise exception 'Attendance can only be attested after the event starts'; end if;
  update guests set attendance_attested=true where id=v_guest.id;
  v_result:='{"ok":true}';
  elsif action='linkGuest' then
@@ -199,6 +205,8 @@ begin
  update profiles set display_name=v_guest.display_name where id=v_uid and display_name='Party friend';
  perform refresh_scores(); v_result:='{"ok":true}';
  elsif action='createParty' then
+ if jsonb_typeof(coalesce(payload->'needs','[]'::jsonb))<>'array' or jsonb_typeof(coalesce(payload->'paymentMethods','[]'::jsonb))<>'array' then raise exception 'Needs and payment methods must be arrays'; end if;
+ if jsonb_array_length(coalesce(payload->'needs','[]'::jsonb))>50 or jsonb_array_length(coalesce(payload->'paymentMethods','[]'::jsonb))>5 then raise exception 'Maximum 50 needs and 5 payment methods'; end if;
  if payload ? 'hostName' then
  if length(btrim(payload->>'hostName')) not between 1 and 80 then raise exception 'Host name must be 1–80 characters'; end if;
  update profiles set display_name=btrim(payload->>'hostName') where id=v_uid; end if;
@@ -238,9 +246,9 @@ begin
  v_invite:=encode(gen_random_bytes(32),'hex'); insert into party_invites(party_id,token_hash) values(v_party.id,encode(digest(v_invite,'sha256'),'hex'));
  v_result:=jsonb_build_object('inviteToken',v_invite);
  elsif action='updateParty' then
- if v_party.status='finalized' then raise exception 'Finalized party is immutable'; end if;
+ if v_party.status in ('finalized','canceled','archived') then raise exception 'Finalized, canceled, or archived party is immutable'; end if;
  if payload ? 'status' and payload->>'status' not in ('published','canceled','archived') then raise exception 'Invalid status'; end if;
- update parties set title=coalesce(payload->>'title',title),cover_url=case when payload ? 'coverUrl' then nullif(payload->>'coverUrl','') else cover_url end,ends_at=case when payload ? 'endsAt' then (payload->>'endsAt')::timestamptz else ends_at end,description=coalesce(payload->>'description',description),address=coalesce(payload->>'address',address),general_location=coalesce(payload->>'generalLocation',general_location),budget_cents=coalesce((payload->>'budgetCents')::integer,budget_cents),rsvps_open=coalesce((payload->>'rsvpsOpen')::boolean,rsvps_open),status=coalesce(payload->>'status',status),address_visibility=coalesce(payload->>'addressVisibility',address_visibility) where id=v_party.id;
+ update parties set title=coalesce(payload->>'title',title),cover_url=case when payload ? 'coverUrl' then nullif(payload->>'coverUrl','') else cover_url end,ends_at=case when payload ? 'endsAt' then (payload->>'endsAt')::timestamptz else ends_at end,description=coalesce(payload->>'description',description),address=coalesce(payload->>'address',address),general_location=coalesce(payload->>'generalLocation',general_location),budget_cents=coalesce((payload->>'budgetCents')::integer,budget_cents),rsvps_open=case when payload->>'status' in ('canceled','archived') then false else coalesce((payload->>'rsvpsOpen')::boolean,rsvps_open) end,status=coalesce(payload->>'status',status),address_visibility=coalesce(payload->>'addressVisibility',address_visibility) where id=v_party.id;
  v_result:=jsonb_build_object('party',party_snapshot(v_party.id,true,true));
  elsif action='revokeGuest' then
  update guest_access_tokens set revoked_at=now() where guest_id=v_guest.id and revoked_at is null; v_result:='{"ok":true}';
@@ -267,12 +275,12 @@ begin
  insert into score_events(party_id,guest_id,category,activity_key,value)
  select v_party.id,p.guest_id,'prestige','money:'||p.id,least(v_rules.max_prestige_per_activity,p.amount_cents/100.0*v_rules.money_rate) from pledges p join guests g on g.id=p.guest_id where p.party_id=v_party.id and p.status='confirmed' and g.profile_id is distinct from v_party.host_id on conflict(activity_key) do nothing;
  insert into score_events(party_id,guest_id,category,activity_key,value)
- select v_party.id,c.guest_id,'prestige','supply:'||c.id,least(v_rules.max_prestige_per_activity,case when n.kind='task' then n.minutes_per_unit*c.quantity/60.0*v_rules.hourly_rate else n.estimated_value_cents*c.quantity/100.0*v_rules.supplies_rate end)
+ select v_party.id,c.guest_id,'prestige','supply:'||c.id,least(v_rules.max_prestige_per_activity,case when n.kind='task' then n.minutes_per_unit*c.quantity/60.0*v_rules.hourly_rate else n.estimated_value_cents::numeric*c.quantity/100.0*v_rules.supplies_rate end)
  from claims c join needs n on n.id=c.need_id join guests g on g.id=c.guest_id where n.party_id=v_party.id and c.status in ('delivered','completed') and g.profile_id is distinct from v_party.host_id on conflict(activity_key) do nothing;
  select count(distinct g.profile_id) into v_attendees from guests g join attendance_records a on a.guest_id=g.id where g.party_id=v_party.id and a.attended and g.attendance_attested and g.profile_id<>v_party.host_id;
  if v_attendees>=v_rules.minimum_participants then
  select coalesce(sum(p.amount_cents),0)/100.0 into v_funding from pledges p join guests g on g.id=p.guest_id where p.party_id=v_party.id and p.status='confirmed' and g.profile_id is not null and g.profile_id<>v_party.host_id;
- select coalesce(sum(n.estimated_value_cents*c.quantity),0)/100.0 into v_supplies from claims c join needs n on n.id=c.need_id join guests g on g.id=c.guest_id where n.party_id=v_party.id and n.kind='item' and c.status='delivered' and g.profile_id is not null and g.profile_id<>v_party.host_id;
+ select coalesce(sum(n.estimated_value_cents::numeric*c.quantity),0)/100.0 into v_supplies from claims c join needs n on n.id=c.need_id join guests g on g.id=c.guest_id where n.party_id=v_party.id and n.kind='item' and c.status='delivered' and g.profile_id is not null and g.profile_id<>v_party.host_id;
  v_aura:=least(v_rules.max_aura_per_party,round(v_rules.aura_attendance*sqrt(v_attendees)+v_rules.aura_money*sqrt(v_funding)+v_rules.aura_supplies*sqrt(v_supplies)));
  -- Repeated groups have diminishing returns within a rolling month.
  v_aura:=round(v_aura/sqrt(1+(select count(*) from score_events e where e.profile_id=v_uid and category='aura' and created_at>now()-interval '30 days')));
@@ -298,7 +306,7 @@ grant execute on function public.party_api(text,jsonb) to anon,authenticated;
 create function public.reverse_score(p_event_id uuid,p_reason text) returns uuid language plpgsql security definer set search_path=public,extensions as $$
 declare e score_events%rowtype; result uuid;
 begin
- if length(btrim(p_reason))<10 then raise exception 'An audit reason is required'; end if;
+ if p_reason is null or length(btrim(p_reason)) not between 10 and 2000 then raise exception 'An audit reason is required'; end if;
  select * into e from score_events where id=p_event_id and reverses_id is null;
  if not found then raise exception 'Original score event not found'; end if;
  insert into score_events(party_id,guest_id,profile_id,category,activity_key,value,weight,reverses_id) values(e.party_id,e.guest_id,e.profile_id,e.category,'reverse:'||e.id,-e.value,e.weight,e.id) returning id into result;

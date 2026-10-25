@@ -18,19 +18,19 @@ Money is always integer **cents**. Date-times are ISO 8601 with explicit offsets
 
 ### Public invitation and guests
 
-| Action | Payload | Result |
-| --- | --- | --- |
-| `invitation` | `inviteToken` | Party snapshot; no street address, guest identities, or individual contribution amounts |
-| `rsvp` | `inviteToken`, `name`, `status` (`going`, `maybe`, `declined`), `idempotencyKey` | `{ guest: { id, name, status }, managementToken, party }` |
-| `guest` | `managementToken` | `{ party, guest, claims, pledges }`; private address only if host permits |
-| `changeRsvp` | `managementToken`, optional `status`, optional `name` (1–80 chars), key | `{ ok: true }` |
-| `claim` | `managementToken`, `needId`, integer `quantity`, key | `{ id, needId, quantity, status }` |
-| `pledge` | `managementToken`, `amountCents` OR `coverRemaining: true`, optional `anonymous`, `sponsorship`, key | `{ id, amountCents, status: 'pledged' }` |
-| `releaseClaim` | `managementToken`, `claimId`, key | `{ ok: true }` |
-| `editPledge` | `managementToken`, `pledgeId`, `amountCents`, key | Edits a pending pledge only |
-| `cancelPledge` | `managementToken`, `pledgeId`, key | `{ ok: true }` |
-| `confirmAttendance` | `managementToken`, key | Guest independently attests attendance after party starts |
-| `linkGuest` | Signed-in session + `managementToken`, key | Proves control of original capability; links participation to verified account |
+| Action              | Payload                                                                                              | Result                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `invitation`        | `inviteToken`                                                                                        | Party snapshot; no street address, guest identities, or individual contribution amounts |
+| `rsvp`              | `inviteToken`, `name`, `status` (`going`, `maybe`, `declined`), `idempotencyKey`                     | `{ guest: { id, name, status }, managementToken, party }`                               |
+| `guest`             | `managementToken`                                                                                    | `{ party, guest, claims, pledges }`; private address only if host permits               |
+| `changeRsvp`        | `managementToken`, optional `status`, optional `name` (1–80 chars), key                              | `{ ok: true }`                                                                          |
+| `claim`             | `managementToken`, `needId`, integer `quantity`, key                                                 | `{ id, needId, quantity, status }`                                                      |
+| `pledge`            | `managementToken`, `amountCents` OR `coverRemaining: true`, optional `anonymous`, `sponsorship`, key | `{ id, amountCents, status: 'pledged' }`                                                |
+| `releaseClaim`      | `managementToken`, `claimId`, key                                                                    | `{ ok: true }`                                                                          |
+| `editPledge`        | `managementToken`, `pledgeId`, `amountCents`, key                                                    | Edits a pending pledge only                                                             |
+| `cancelPledge`      | `managementToken`, `pledgeId`, key                                                                   | `{ ok: true }`                                                                          |
+| `confirmAttendance` | `managementToken`, key                                                                               | Guest independently attests attendance after party starts                               |
+| `linkGuest`         | Signed-in session + `managementToken`, key                                                           | Proves control of original capability; links participation to verified account          |
 
 A `key` above always means `idempotencyKey`. Guest tokens are 256-bit capabilities: preserve them in a private management link, do not put them in analytics, logs, social metadata, or third-party referrers. Use a URL fragment for management credentials and `Referrer-Policy: no-referrer`. Token revocation is immediate. Invitation rotation does not revoke existing management credentials.
 
@@ -38,21 +38,21 @@ A `key` above always means `idempotencyKey`. Guest tokens are 256-bit capabiliti
 
 ### Host operations (authenticated)
 
-| Action | Payload | Result |
-| --- | --- | --- |
-| `createParty` | `title`, `startsAt`, optional `endsAt`, `description`, `generalLocation`, `address`, `capacity`, `budgetCents`, `hostName`, `coverUrl`, `cancellationDeadline`, `needs`, `paymentMethods`, key | `{ party, inviteToken }` |
-| `listParties` | `{}` | `{ parties: PartySnapshot[] }` for current host only |
-| `dashboard` | `partyId` | `{ party, guests, claims, pledges }` with private details |
-| `confirmPayment` | `pledgeId`, key | Host confirms actual received money |
-| `verifyClaim` | `claimId`, optional `fulfilled` (defaults true), key | Records delivered/completed or explicit not fulfilled |
-| `attendance` | `guestId`, boolean `attended`, key | Host check-in; available after start |
-| `rotateInvite` | `partyId`, key | `{ inviteToken }`; immediately invalidates previous invitation |
-| `revokeGuest` | `guestId`, key | Revokes every management token for guest |
-| `updateParty` | `partyId`, optional `title`, `description`, `coverUrl`, `endsAt`, `address`, `generalLocation`, `budgetCents`, `rsvpsOpen`, `addressVisibility` (`guests` or `host`), `status` (`published`, `canceled`, `archived`), key | `{ party }` |
-| `postUpdate` | `partyId`, `message`, key | `{ ok: true }` |
-| `finalize` | `partyId`, key | `{ ok, verifiedParticipants, auraAwarded, party }` |
-| `profile` | `{}` | `{ profile, scores, events }` for authenticated user only |
-| `dispute` | `scoreEventId`, `reason` (10–2000 chars), key | Opens an owned-score dispute |
+| Action           | Payload                                                                                                                                                                                                                   | Result                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `createParty`    | `title`, `startsAt`, optional `endsAt`, `description`, `generalLocation`, `address`, `capacity`, `budgetCents`, `hostName`, `coverUrl`, `cancellationDeadline`, `needs`, `paymentMethods`, key                            | `{ party, inviteToken }`                                       |
+| `listParties`    | `{}`                                                                                                                                                                                                                      | `{ parties: PartySnapshot[] }` for current host only           |
+| `dashboard`      | `partyId`                                                                                                                                                                                                                 | `{ party, guests, claims, pledges }` with private details      |
+| `confirmPayment` | `pledgeId`, key                                                                                                                                                                                                           | Host confirms actual received money                            |
+| `verifyClaim`    | `claimId`, optional `fulfilled` (defaults true), key                                                                                                                                                                      | Records delivered/completed or explicit not fulfilled          |
+| `attendance`     | `guestId`, boolean `attended`, key                                                                                                                                                                                        | Host check-in; available after start                           |
+| `rotateInvite`   | `partyId`, key                                                                                                                                                                                                            | `{ inviteToken }`; immediately invalidates previous invitation |
+| `revokeGuest`    | `guestId`, key                                                                                                                                                                                                            | Revokes every management token for guest                       |
+| `updateParty`    | `partyId`, optional `title`, `description`, `coverUrl`, `endsAt`, `address`, `generalLocation`, `budgetCents`, `rsvpsOpen`, `addressVisibility` (`guests` or `host`), `status` (`published`, `canceled`, `archived`), key | `{ party }`                                                    |
+| `postUpdate`     | `partyId`, `message`, key                                                                                                                                                                                                 | `{ ok: true }`                                                 |
+| `finalize`       | `partyId`, key                                                                                                                                                                                                            | `{ ok, verifiedParticipants, auraAwarded, party }`             |
+| `profile`        | `{}`                                                                                                                                                                                                                      | `{ profile, scores, events }` for authenticated user only      |
+| `dispute`        | `scoreEventId`, `reason` (10–2000 chars), key                                                                                                                                                                             | Opens an owned-score dispute                                   |
 
 Needs: `{ kind: 'item' | 'task' | 'expense', title, quantity, allowPartial?, estimatedValueCents?, minutesPerUnit? }`. Estimated value and minutes are **per unit**, set by the host before claims. Expense needs are display-only funding categories; monetary support is party-wide to avoid double counting. Payment methods: `{ label, url }` with HTTPS URL.
 
@@ -75,3 +75,11 @@ This migration must be applied to a real Supabase project and smoke-tested there
 For a true concurrency acceptance test on a running Supabase database, issue two `claim` RPC requests simultaneously from distinct guest tokens for the final available unit, using distinct idempotency keys. Assert exactly one success, one unavailable error, and final claimed quantity equal to one. PGlite executes one connection and does not prove this multi-connection condition; the SQL transaction uses `FOR UPDATE` on the parent party and need to serialize it.
 
 Optional `coverUrl` stores a public HTTPS image URL of at most 2,048 characters. Use a stable public image URL without credentials or secret query strings. Non-HTTPS URLs and host credentials are rejected. The backend does not proxy, fetch, or verify image content. Hosts set `estimatedValueCents` and `minutesPerUnit` per need during creation; guests cannot submit those valuation fields. `hostName` is saved to the authenticated host profile on party creation.
+
+## Checkpoint security audit
+
+A fresh audit rechecked authority boundaries, terminal states, capability revocation, account linking, immutable corrections, and payload bounds. All guest/invitation credentials are revalidated **after** the party lock is acquired; guest state is reloaded there too. This prevents queued requests from relying on stale token revocation or account ownership. Canceled, archived, and finalized parties cannot be revived or edited through `updateParty`; canceled/archived parties also close RSVPs. Guests cannot add attendance attestations after finalization. Linking prior participation remains allowed with the original valid credential and a confirmed-email account.
+
+Authenticated RPC calls require a confirmed email in Supabase Auth, independent of frontend configuration. Public-schema CREATE is revoked from browser roles to prevent helper-function shadowing. Payloads must be JSON objects under 100 KB, creation permits at most 50 needs and 5 payment links, and descriptive text fields have database length bounds. Both cover and payment URLs require HTTPS and reject URL user credentials. Supply-value arithmetic uses PostgreSQL numeric before multiplication, so large valid quantities cannot overflow integer scoring calculations. Trusted reversal calls require a nonempty audit reason of 10–2,000 characters.
+
+`npm run test:db` verifies these boundaries plus capability ownership, terminal-event behavior, configured capacity, successful-request rate caps, schema permissions, guest-account takeover denial, private ledger access, cross-host payment denial, high-quantity score caps, and immutable reversal behavior. The local auth fixture tests confirmed-email enforcement and identity-based SQL authorization; it does **not** simulate the hosted Auth email flow. Failed PostgreSQL transactions roll back their rate-limit counters; SQL capability limits therefore do not rate-limit invalid requests or replace ingress protection. Deployment still requires real Supabase migration/application smoke tests, email delivery, trusted gateway rate limiting, and a true two-connection race test. No successful hosted integration or live payment-provider settlement is asserted by these local checks.

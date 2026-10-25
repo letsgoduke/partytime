@@ -10,9 +10,12 @@
     "test:e2e": "playwright test",
     "preview": "vite preview --host 0.0.0.0",
     "test:db": "node supabase/tests/run-security.mjs",
-    "format": "prettier --write src tests *.ts *.json docs README.md",
-    "format:check": "prettier --check src tests *.ts *.json docs README.md",
-    "check": "npm run build && npm test && npm run test:db"
+    "format": "prettier --write src tests scripts *.ts *.json docs README.md",
+    "format:check": "prettier --check src tests scripts *.ts *.json docs README.md",
+    "check": "npm run build && npm test && npm run test:db",
+    "test:contract": "TEST_LIVE_CONTRACT=1 VITE_SUPABASE_URL=https://contract.supabase.co VITE_SUPABASE_ANON_KEY=contract-test-key playwright test tests/live-contract.spec.ts --workers=1",
+    "icons": "node scripts/generate-icons.mjs",
+    "validate:env": "node scripts/validate-env.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -46,5 +49,8 @@
     "typescript": "~5.9.3",
     "vite": "^7.1.12",
     "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

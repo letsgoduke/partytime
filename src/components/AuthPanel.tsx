@@ -1,6 +1,103 @@
-import {useEffect,useState} from 'react';
-import {Mail,ArrowRight} from 'lucide-react';
-import {supabase} from '../lib/api';
-import {Button} from './ui/button';
-export function useAuth(){const [ready,setReady]=useState(!supabase);const [userId,setUserId]=useState<string|null>(null);useEffect(()=>{if(!supabase)return;void supabase.auth.getSession().then(({data})=>{setUserId(data.session?.user.id||null);setReady(true)});const {data}=supabase.auth.onAuthStateChange((_event,session)=>{setUserId(session?.user.id||null);setReady(true)});return()=>data.subscription.unsubscribe()},[]);return {ready,userId}}
-export function AuthPanel(){const [email,setEmail]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);async function submit(){if(!supabase){setMessage('Configure Supabase to sign in. Your demo remains available.');return}setBusy(true);try{const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname+location.hash}});if(error)throw error;setMessage('Check your email for your sign-in link. Open it on this device to continue.')}catch(e){setMessage(e instanceof Error?e.message:'Could not send your link.')}finally{setBusy(false)}}return <section className="form-card auth-panel"><Mail className="blue-text"/><h2>Your people. Your plans.</h2><p>Sign in with a private email link. No password to remember.</p><form onSubmit={e=>{e.preventDefault();void submit()}}><label>Your email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label><Button disabled={busy} type="submit">{busy?'Sending…':'Send a sign-in link'}<ArrowRight size={16}/></Button></form>{message&&<p className="notice" role="status">{message}</p>}</section>}
+import { useEffect, useState } from "react";
+import { Mail, ArrowRight } from "lucide-react";
+import { supabase } from "../lib/api";
+import { Button } from "./ui/button";
+
+export function useAuth() {
+  const [ready, setReady] = useState(!supabase);
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    let receivedAuthEvent = false;
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      receivedAuthEvent = true;
+      if (active) {
+        setUserId(session?.user.id || null);
+        setReady(true);
+      }
+    });
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (active && !receivedAuthEvent) {
+          setUserId(error ? null : data.session?.user.id || null);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (active) setReady(true);
+      });
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+  return { ready, userId };
+}
+
+export function AuthPanel() {
+  const [email, setEmail] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    if (!supabase) {
+      setMessage("Configure Supabase to sign in. Your demo remains available.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      // Private guest credentials stay on this device, outside the email redirect URL.
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: location.origin + location.pathname },
+      });
+      if (error) throw error;
+      setMessage(
+        "Check your email for your sign-in link. Open it on this device to continue.",
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not send your link.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="form-card auth-panel">
+      <Mail className="blue-text" />
+      <h2>Your people. Your plans.</h2>
+      <p>Sign in with a private email link. No password to remember.</p>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <label>
+          Your email
+          <input
+            required
+            type="email"
+            maxLength={254}
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+          />
+        </label>
+        <Button disabled={busy} type="submit">
+          {busy ? "Sending…" : "Send a sign-in link"}
+          <ArrowRight size={16} />
+        </Button>
+      </form>
+      {message && (
+        <p className="notice" role="status">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}

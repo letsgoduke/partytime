@@ -21,9 +21,9 @@ import { AuthPanel, useAuth } from "./components/AuthPanel";
 import { Dialog } from "./components/Dialog";
 import { Shell } from "./components/Shell";
 import { Button } from "./components/ui/button";
-import { callApi, idempotencyKey } from "./lib/api";
+import { callApi } from "./lib/api";
 import { money, readDemo, saveDemo, type Party, type Guest } from "./lib/demo";
-type Mode = "rsvp" | "money" | "items" | "tasks" | "manage" | null;
+type Mode = "rsvp" | "money" | "manage" | null;
 export default function App({ manage = false }: { manage?: boolean }) {
   const { token } = useParams();
   const { userId } = useAuth();
@@ -44,9 +44,15 @@ export default function App({ manage = false }: { manage?: boolean }) {
   );
   const [managementToken, setManagementToken] = useState(() =>
     manage
-      ? location.hash.slice(1)
+      ? /^[a-f0-9]{64}$/i.test(location.hash.slice(1))
+        ? location.hash.slice(1)
+        : sessionStorage.getItem("active-management-token") || ""
       : sessionStorage.getItem(`guest-${token}`) || "",
   );
+  useEffect(() => {
+    if (managementToken)
+      sessionStorage.setItem("active-management-token", managementToken);
+  }, [managementToken]);
   const query = useQuery({
     queryKey: ["invitation", token, manage, managementToken],
     queryFn: () =>
@@ -83,7 +89,7 @@ export default function App({ manage = false }: { manage?: boolean }) {
   async function submitRsvp() {
     await act(async () => {
       if (!name.trim())
-        throw new Error("Add your name so Alex knows who’s coming.");
+        throw new Error("Add your name so your host knows who’s coming.");
       if (demo) {
         const g = {
           id: guest?.id || crypto.randomUUID(),
@@ -104,8 +110,14 @@ export default function App({ manage = false }: { manage?: boolean }) {
         sessionStorage.setItem("demo-guest", JSON.stringify(g));
       } else {
         if (managementToken) {
-          await callApi("changeRsvp", { managementToken, status: rsvp });
-          setGuest(guest ? { ...guest, status: rsvp } : null);
+          await callApi("changeRsvp", {
+            managementToken,
+            status: rsvp,
+            name: name.trim(),
+          });
+          setGuest(
+            guest ? { ...guest, status: rsvp, name: name.trim() } : null,
+          );
           await query.refetch();
         } else {
           const data = await callApi<{ guest: Guest; managementToken: string }>(
@@ -114,7 +126,6 @@ export default function App({ manage = false }: { manage?: boolean }) {
               inviteToken: token,
               name: name.trim(),
               status: rsvp,
-              idempotencyKey: idempotencyKey(),
             },
           );
           setGuest(data.guest);
@@ -164,7 +175,6 @@ export default function App({ manage = false }: { manage?: boolean }) {
           managementToken,
           amountCents: cents,
           coverRemaining: cover,
-          idempotencyKey: idempotencyKey(),
         });
         await query.refetch();
       }
@@ -203,7 +213,6 @@ export default function App({ manage = false }: { manage?: boolean }) {
           managementToken,
           needId,
           quantity: 1,
-          idempotencyKey: idempotencyKey(),
         });
         await query.refetch();
       }
@@ -246,20 +255,29 @@ export default function App({ manage = false }: { manage?: boolean }) {
       .querySelector(".needs-section")
       ?.scrollIntoView?.({ behavior: "auto", block: "start" });
   }
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(
-        managementToken
-          ? `${location.origin}/manage#${managementToken}`
-          : location.href,
-      );
+  async function copyLink(privateManagement = false) {
+    if (!privateManagement && manage) {
       setNotice(
-        managementToken
+        "Ask your host for the invitation link. Your management link is private.",
+      );
+      return;
+    }
+    const link = privateManagement
+      ? `${location.origin}/manage#${managementToken}`
+      : `${location.origin}${token ? `/invite/${token}` : "/"}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setNotice(
+        privateManagement
           ? "Private management link copied. Keep it just for you."
           : "Invitation link copied.",
       );
     } catch {
-      setNotice("Copy the link from your browser’s address bar.");
+      setNotice(
+        privateManagement
+          ? "Clipboard unavailable. Your private management link is shown below."
+          : "Copy the invitation from your browser’s address bar.",
+      );
     }
   }
   if (!party)
@@ -280,6 +298,20 @@ export default function App({ manage = false }: { manage?: boolean }) {
     );
   return (
     <Shell demo={demo}>
+      {error && !mode && (
+        <p className="error page-error" role="alert">
+          {error}
+        </p>
+      )}
+      {party.status !== "published" && (
+        <p className="notice page-error">
+          {party.status === "canceled"
+            ? "This party has been canceled."
+            : party.status === "finalized"
+              ? "This party has wrapped up. Thanks for being part of it."
+              : "This invitation is no longer accepting RSVPs."}
+        </p>
+      )}
       <div className="invitation-layout">
         <div className="party-main">
           <div className="eyebrow">
@@ -292,6 +324,41 @@ export default function App({ manage = false }: { manage?: boolean }) {
             addressVisible={Boolean(guest || managementToken)}
             onCopyInvitation={() => void copyLink()}
           />
+          {showContributionChoices && (
+            <section
+              className="form-card contribution-choices"
+              aria-label="Optional ways to join in"
+            >
+              <h2>You’re coming. That’s what matters.</h2>
+              <p>Anything else is completely optional.</p>
+              <div className="amount-options">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowContributionChoices(false);
+                    setMode("money");
+                  }}
+                >
+                  Chip in
+                </Button>
+                <Button variant="outline" onClick={chooseSupplies}>
+                  Bring something
+                </Button>
+                <Button variant="outline" onClick={chooseSupplies}>
+                  Lend a hand
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowContributionChoices(false);
+                    setNotice("Just bring yourself. We’re glad you’re coming!");
+                  }}
+                >
+                  Just coming
+                </Button>
+              </div>
+            </section>
+          )}
           <NeedsGrid
             needs={party.needs}
             busy={busy}
@@ -308,14 +375,17 @@ export default function App({ manage = false }: { manage?: boolean }) {
         <aside className="party-sidebar">
           <RsvpCard
             goingCount={party.going}
+            demo={demo}
             hasGuest={Boolean(guest)}
             canManage={Boolean(guest || manage)}
             onRsvp={() => {
               setName(guest?.name || "");
+              setRsvp(guest?.status || "going");
               setMode("rsvp");
             }}
             onMaybe={() => {
               setRsvp("maybe");
+              setName(guest?.name || "");
               setMode("rsvp");
             }}
             onManage={() => setMode("manage")}
@@ -367,41 +437,6 @@ export default function App({ manage = false }: { manage?: boolean }) {
             <X size={17} />
           </button>
         </div>
-      )}
-      {showContributionChoices && (
-        <section
-          className="form-card contribution-choices"
-          aria-label="Optional ways to join in"
-        >
-          <h2>You’re coming. That’s what matters.</h2>
-          <p>Anything else is completely optional.</p>
-          <div className="amount-options">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowContributionChoices(false);
-                setMode("money");
-              }}
-            >
-              Chip in
-            </Button>
-            <Button variant="outline" onClick={chooseSupplies}>
-              Bring something
-            </Button>
-            <Button variant="outline" onClick={chooseSupplies}>
-              Lend a hand
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowContributionChoices(false);
-                setNotice("Just bring yourself. We’re glad you’re coming!");
-              }}
-            >
-              Just coming
-            </Button>
-          </div>
-        </section>
       )}
       {mode && (
         <Dialog
@@ -456,6 +491,7 @@ export default function App({ manage = false }: { manage?: boolean }) {
                     <button
                       type="button"
                       className={rsvp === s ? "selected" : ""}
+                      aria-pressed={rsvp === s}
                       onClick={() => setRsvp(s)}
                       key={s}
                     >
@@ -482,6 +518,7 @@ export default function App({ manage = false }: { manage?: boolean }) {
                   {[10, 20, 35, 50].map((n) => (
                     <button
                       className={amount === String(n) ? "selected" : ""}
+                      aria-pressed={amount === String(n)}
                       key={n}
                       onClick={() => setAmount(String(n))}
                     >
@@ -705,9 +742,12 @@ export default function App({ manage = false }: { manage?: boolean }) {
                   </>
                 )}
                 {managementToken && (
-                  <Button variant="outline" onClick={() => void copyLink()}>
+                  <Button variant="outline" onClick={() => void copyLink(true)}>
                     <Copy size={16} /> Copy private management link
                   </Button>
+                )}
+                {managementToken && (
+                  <p className="private-link">{`${location.origin}/manage#${managementToken}`}</p>
                 )}
                 <Button onClick={() => setMode("money")}>
                   Add a contribution <Plus size={16} />
