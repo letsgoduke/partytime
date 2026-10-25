@@ -71,6 +71,14 @@ class InfrastructureSecurityTests(unittest.TestCase):
         self.assertIn('ALLOW_USER_AUTH', client['ExplicitAuthFlows'])
         self.assertEqual(self.properties('LoginDomain')['ManagedLoginVersion'], 2)
 
+    def test_email_code_sign_in_requires_a_verified_ses_sender(self):
+        email = self.properties('UserPool')['EmailConfiguration']
+        self.assertEqual(email['EmailSendingAccount'], 'DEVELOPER')
+        self.assertEqual(email['SourceArn'], {'Ref': 'SesIdentityArn'})
+        self.assertEqual(email['From'], {'Ref': 'SesFromAddress'})
+        self.assertNotIn('Default', self.template['Parameters']['SesIdentityArn'])
+        self.assertNotIn('Default', self.template['Parameters']['SesFromAddress'])
+
     def test_isolated_network_uses_private_secrets_endpoint(self):
         types = {resource['Type'] for resource in self.resources.values()}
         self.assertNotIn('AWS::EC2::InternetGateway', types)
