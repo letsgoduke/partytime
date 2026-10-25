@@ -7,7 +7,8 @@ let poolCreatedAt = 0;
 export async function readSecret(arn) {
   if (!arn) throw new Error('Database secret ARN is required');
   const value = await secrets.send(new GetSecretValueCommand({ SecretId: arn }));
-  const secret = JSON.parse(value.SecretString ?? 'null');
+  let secret;
+  try { secret = JSON.parse(value.SecretString ?? 'null'); } catch { throw new Error('Database secret must contain valid JSON'); }
   if (!secret || typeof secret.username !== 'string' || typeof secret.password !== 'string') throw new Error('Invalid database secret');
   return secret;
 }

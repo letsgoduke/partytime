@@ -20,14 +20,17 @@ export function verifiedIdentity(event, config) {
 export function createHandler({ getClient, config }) {
   return async (event) => {
     const headers = { 'content-type': 'application/json', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
-    if (config.origin) Object.assign(headers, { 'access-control-allow-origin': config.origin, vary: 'Origin' });
+    const origins = new Set([config.origin, ...(config.allowedOrigins ?? [])].filter(value => value && value !== '*'));
+    const origin = header(event, 'origin');
+    if (origin && origins.has(origin)) Object.assign(headers, { 'access-control-allow-origin': origin, vary: 'Origin' });
+    else if (!origin && config.origin) Object.assign(headers, { 'access-control-allow-origin': config.origin, vary: 'Origin' });
     const respond = (statusCode, body) => ({ statusCode, headers, body: JSON.stringify(body) });
     let client;
     let transaction = false;
     try {
       const host = event.routeKey === 'POST /host';
       if (!host && event.routeKey !== 'POST /guest') throw failure(404, 'Route not found');
-      if (header(event, 'origin') && header(event, 'origin') !== config.origin) throw failure(403, 'Origin not allowed');
+      if (origin && !origins.has(origin)) throw failure(403, 'Origin not allowed');
       const raw = event.isBase64Encoded ? Buffer.from(event.body ?? '', 'base64').toString('utf8') : event.body ?? '';
       if (typeof raw !== 'string' || Buffer.byteLength(raw) > 100000) throw failure(413, 'Request is too large');
       let request;

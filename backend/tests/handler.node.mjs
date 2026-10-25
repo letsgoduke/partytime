@@ -32,3 +32,12 @@ test('bad origin, malformed JSON, oversized payload, unknown route rejected befo
  for(const e of inputs){const f=fixture();assert.ok((await f.handler(e)).statusCode>=400);assert.equal(f.connections,0);}
 });
 test('sequential guest and host calls use isolated local identities',async()=>{const f=fixture();await f.handler(event());await f.handler(event('guest',false));const identities=f.queries.filter(q=>q.sql.includes('set_config')).map(q=>q.values[0]);assert.deepEqual(identities,[id,'']);});
+
+test('explicit development origin is opt-in and response matches validated origin; nonbrowser requests work',async()=>{
+ let connections=0;const client={query:async()=>({rows:[{data:{ok:true}}]}),release:()=>{}};
+ const e=event('invitation',false);e.headers.origin='http://localhost:5173';
+ const handler=createHandler({config:{...config,allowedOrigins:['http://localhost:5173']},getClient:async()=>{connections++;return client;}});
+ const response=await handler(e);assert.equal(response.statusCode,200);assert.equal(response.headers['access-control-allow-origin'],'http://localhost:5173');
+ const production=fixture();assert.equal((await production.handler(e)).statusCode,403);
+ delete e.headers.origin;assert.equal((await handler(e)).statusCode,200);assert.equal(connections,2);
+});
