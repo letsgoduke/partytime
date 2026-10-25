@@ -116,7 +116,7 @@ Resources:
       PreventUserExistenceErrors: ENABLED
       EnableTokenRevocation: true
       AccessTokenValidity: 60
-      IdTokenValidity: 60
+      IdTokenValidity: 15
       RefreshTokenValidity: 7
       TokenValidityUnits:
         AccessToken: minutes

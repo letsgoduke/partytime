@@ -66,6 +66,8 @@ class InfrastructureSecurityTests(unittest.TestCase):
         client = self.properties('BrowserClient')
         self.assertIs(client['GenerateSecret'], False)
         self.assertEqual(client['AllowedOAuthFlows'], ['code'])
+        self.assertEqual(client['IdTokenValidity'], 15)
+        self.assertEqual(client['TokenValidityUnits']['IdToken'], 'minutes')
         self.assertIn('ALLOW_USER_AUTH', client['ExplicitAuthFlows'])
         self.assertEqual(self.properties('LoginDomain')['ManagedLoginVersion'], 2)
 
