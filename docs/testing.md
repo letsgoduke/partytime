@@ -12,6 +12,8 @@ Database tests create fresh schemas/roles/auth fixtures in PGlite with pgcrypto.
 
 Before live launch, run against a staging AWS stack and real Cognito email delivery: create/publish, open invitation in an isolated browser, RSVP, recover the private management link, claim the last item from two independent guest sessions simultaneously, retry a request after dropping its response, pledge, confirm receipt, attest/check in after the event starts, finalize after it ends, link accounts, request and administratively reverse a score, and verify another account cannot read any of those private records.
 
-The GitHub Actions template is saved in `ci/github-actions-check.yml`; activation requires copying it to `.github/workflows/check.yml` with workflow-scoped GitHub authorization. It is a template, not an enabled CI check. The AWS Amplify pipeline independently runs `npm run check` on deployment.
+The GitHub Actions template is saved in `ci/github-actions-check.yml`; activation requires copying it to `.github/workflows/check.yml` with workflow-scoped GitHub authorization. It is a template, not an enabled CI check. The AWS Amplify pipeline independently runs `npm run check` on deployment. The optional workflow template also validates the AWS template and infrastructure guardrails.
 
 `npm run test:backend` verifies the Lambda route allowlists, trusted Cognito claim checks, explicit origins, transaction-local roles/identity, and error redaction. Infrastructure has additional Python/cfn-lint checks documented in `docs/aws-infrastructure.md`.
+
+The contract test uses port 5174 and does not interrupt an existing preview on port 5173. Install pinned infrastructure tooling with `python -m pip install -r infrastructure/requirements.txt` in a separate Python environment.

@@ -7,4 +7,11 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 .DS_Store
-supabase/.temp/
+
+
+# AWS tooling and local Python validation artifacts
+.aws/
+.aws-sam/
+.venv/
+__pycache__/
+*.pyc
