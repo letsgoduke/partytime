@@ -22,6 +22,11 @@ Parameters:
     Type: String
     Default: ''
     Description: Verified sender, required when SesIdentityArn is provided.
+  DatabaseEngineVersion:
+    Type: String
+    Default: '16.15'
+    AllowedPattern: '^16\.[0-9]+$'
+    Description: Supported PostgreSQL 16 minor version; verify availability in the target region.
   DatabaseInstanceClass:
     Type: String
     Default: db.t4g.micro
@@ -250,3 +255,265 @@ Resources:
       PrivateDnsEnabled: true
       SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
       SecurityGroupIds: [!Ref SecretsSecurityGroup]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: secretsmanager:GetSecretValue
+            Resource: [!Ref RuntimeDatabaseSecret, !GetAtt Database.MasterUserSecret.SecretArn]
+
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DBSubnetGroupDescription: Isolated subnets across two availability zones.
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+
+  DatabaseParameters:
+    Type: AWS::RDS::DBParameterGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Require TLS for every PostgreSQL connection.
+      Family: postgres16
+      Parameters:
+        rds.force_ssl: '1'
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Engine: postgres
+      EngineVersion: !Ref DatabaseEngineVersion
+      DBName: partytime
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: '20'
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: partytime_owner
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      DBParameterGroupName: !Ref DatabaseParameters
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: !If [UseMultiAZ, true, false]
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      AutoMinorVersionUpgrade: true
+      EnableCloudwatchLogsExports: [postgresql]
+
+  RuntimeDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Non-superuser database login for Partytime request functions.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"partytime_runtime"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+
+  # API and migration functions have distinct roles; runtime cannot read the master secret.
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadRuntimeCredential
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeDatabaseSecret
+        - PolicyName: LambdaVpcAndLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # These EC2 ENI operations require wildcard resources for Lambda VPC attachment.
+              - Effect: Allow
+                Action: [ec2:CreateNetworkInterface, ec2:DescribeNetworkInterfaces, ec2:DescribeSubnets, ec2:DeleteNetworkInterface, ec2:AssignPrivateIpAddresses, ec2:UnassignPrivateIpAddresses]
+                Resource: '*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:log-stream:*'
+
+  MigrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadMigrationCredentials
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!GetAtt Database.MasterUserSecret.SecretArn, !Ref RuntimeDatabaseSecret]
+        - PolicyName: LambdaVpcAndLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ec2:CreateNetworkInterface, ec2:DescribeNetworkInterfaces, ec2:DescribeSubnets, ec2:DeleteNetworkInterface, ec2:AssignPrivateIpAddresses, ec2:UnassignPrivateIpAddresses]
+                Resource: '*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-migrate:log-stream:*'
+
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-api'
+      RetentionInDays: 14
+  MigrationLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-migrate'
+      RetentionInDays: 14
+  GatewayLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      Description: Private host management and capability-protected guest operations.
+      CorsConfiguration:
+        AllowOrigins: [!Ref AppOrigin, 'http://localhost:5173']
+        AllowMethods: [POST, OPTIONS]
+        AllowHeaders: [content-type, authorization]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: HostIdentity
+        Authorizers:
+          HostIdentity:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+              audience: [!Ref BrowserClient]
+      DefaultRouteSettings:
+        ThrottlingRateLimit: 20
+        ThrottlingBurstLimit: 40
+      RouteSettings:
+        'POST /guest':
+          ThrottlingRateLimit: 10
+          ThrottlingBurstLimit: 20
+        'POST /host':
+          ThrottlingRateLimit: 10
+          ThrottlingBurstLimit: 20
+      AccessLogSettings:
+        DestinationArn: !GetAtt GatewayLogs.Arn
+        # Never log query strings, bodies, headers, names, tokens, or addresses.
+        Format: '{"requestId":"$context.requestId","routeKey":"$context.routeKey","status":"$context.status","responseLength":"$context.responseLength"}'
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [ApiLogs, SecretsEndpoint, LambdaToDatabase, LambdaToSecrets]
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-api'
+      Description: Partytime request boundary; restricted non-superuser database access.
+      CodeUri: ../backend/
+      Handler: functions/api.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 20
+      ReservedConcurrentExecutions: 10
+      Role: !GetAtt ApiRole.Arn
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !Ref RuntimeDatabaseSecret
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_PORT: !GetAtt Database.Endpoint.Port
+          DB_NAME: partytime
+          RDS_CA_PATH: /var/runtime/ca-cert.pem
+          COGNITO_ISSUER: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+          COGNITO_CLIENT_ID: !Ref BrowserClient
+          APP_ORIGIN: !Ref AppOrigin
+      Events:
+        HostRequest:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /host
+            Method: POST
+            PayloadFormatVersion: '2.0'
+        GuestRequest:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /guest
+            Method: POST
+            PayloadFormatVersion: '2.0'
+            Auth:
+              Authorizer: NONE
+
+  MigrationFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [MigrationLogs, SecretsEndpoint, LambdaToDatabase, LambdaToSecrets]
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-migrate'
+      Description: IAM invoke only; applies versioned SQL and provisions the runtime login.
+      CodeUri: ../backend/
+      Handler: functions/migrate.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 300
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt MigrationRole.Arn
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !GetAtt Database.MasterUserSecret.SecretArn
+          APP_DB_SECRET_ARN: !Ref RuntimeDatabaseSecret
+          DB_HOST: !GetAtt Database.Endpoint.Address
+          DB_PORT: !GetAtt Database.Endpoint.Port
+          DB_NAME: partytime
+          RDS_CA_PATH: /var/runtime/ca-cert.pem
+      # Intentionally no Events or FunctionUrlConfig. Deployment does not execute migrations.
+
+Outputs:
+  AwsRegion:
+    Value: !Ref AWS::Region
+  ApiUrl:
+    Description: Public API base URL; guest actions still require invitation or management capabilities.
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  CognitoUserPoolId:
+    Value: !Ref UserPool
+  CognitoClientId:
+    Description: Public OAuth client identifier, never a client secret.
+    Value: !Ref BrowserClient
+  CognitoIssuer:
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+  CognitoDomain:
+    Value: !Sub 'https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+  MigrationFunctionName:
+    Description: Invoke only through authorized AWS IAM credentials after reviewing migrations.
+    Value: !Ref MigrationFunction
