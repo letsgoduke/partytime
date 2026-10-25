@@ -14,7 +14,6 @@ import { readDemo } from "../lib/demo";
 import { callApi } from "../lib/api";
 
 vi.mock("../lib/api", () => ({
-  supabase: null,
   callApi: vi.fn(),
   idempotencyKey: () => "test-request",
 }));

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   signinRedirect: vi.fn(),
   signinRedirectCallback: vi.fn(),
@@ -39,6 +39,7 @@ beforeEach(() => {
     "https://example.auth.us-east-1.amazoncognito.com",
   );
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("Cognito session boundary", () => {
   it("never includes a private guest fragment in the sign-in return path", async () => {
     const { auth } = await import("./auth");

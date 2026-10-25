@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AuthPanel, useAuth } from "../components/AuthPanel";
-import { callApi, supabase } from "../lib/api";
+import { callApi } from "../lib/api";
+import { auth } from "../lib/auth";
+import { awsConfigured } from "../lib/aws-config";
 import { Button } from "../components/ui/button";
 import { prestigeTitle } from "../domain/scoring";
 import {
@@ -43,7 +45,7 @@ export default function Profile() {
   const [eventId, setEventId] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  if (supabase) {
+  if (awsConfigured) {
     const data = query.data;
     return (
       <Shell>
@@ -159,13 +161,10 @@ export default function Profile() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  void supabase?.auth
+                  void auth
                     .signOut()
-                    .then(({ error }) => {
-                      if (error) setMessage(error.message);
-                    })
                     .catch(() =>
-                      setMessage("Could not sign out. Please retry."),
+                      setMessage("Could not complete sign-out. Please retry."),
                     )
                 }
               >

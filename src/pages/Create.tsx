@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 import { Shell } from "../components/Shell";
 import { Button } from "../components/ui/button";
-import { callApi, supabase } from "../lib/api";
+import { callApi } from "../lib/api";
+import { auth } from "../lib/auth";
+import { awsConfigured } from "../lib/aws-config";
 import type { Need } from "../lib/demo";
 import { useAuth } from "../components/AuthPanel";
 
@@ -182,28 +184,22 @@ export default function Create() {
     }
   }, [values, needs]);
   async function signIn() {
-    if (!supabase) {
+    if (!awsConfigured) {
       setMessage(
-        "Live publishing needs Supabase. Your draft is saved; follow the setup instructions in README.md.",
+        "Live publishing needs AWS configuration. Your draft is saved; follow the setup instructions in README.md.",
       );
       return;
     }
     setBusy(true);
     setMessage("");
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { emailRedirectTo: `${location.origin}/create` },
-      });
-      if (error) throw error;
-      setMessage(
-        "Check your email for your sign-in link. Your draft is saved here.",
-      );
+      await auth.signIn(email.trim(), "/create");
+      setMessage("Opening secure sign-in. Your draft is saved here.");
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Could not send your sign-in link. Try again.",
+          : "Could not open sign-in. Try again.",
       );
     } finally {
       setBusy(false);
@@ -579,7 +575,7 @@ export default function Create() {
                     disabled={busy || !email.includes("@")}
                     onClick={() => void signIn()}
                   >
-                    Send me a sign-in link
+                    Continue with email
                   </Button>
                 </>
               )}

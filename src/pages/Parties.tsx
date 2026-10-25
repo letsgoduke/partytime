@@ -4,7 +4,8 @@ import { ArrowRight, CalendarDays, Plus, Users } from "lucide-react";
 import { Shell } from "../components/Shell";
 import { AuthPanel, useAuth } from "../components/AuthPanel";
 import { Button } from "../components/ui/button";
-import { callApi, supabase } from "../lib/api";
+import { callApi } from "../lib/api";
+import { awsConfigured } from "../lib/aws-config";
 interface Summary {
   id: string;
   title: string;
@@ -35,7 +36,7 @@ export default function Parties() {
             </Link>
           </Button>
         </div>
-        {!supabase ? (
+        {!awsConfigured ? (
           <div className="empty-state">
             <h2>Let’s get something on the calendar.</h2>
             <p>Explore the demo while live hosting is being configured.</p>

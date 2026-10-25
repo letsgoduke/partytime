@@ -4,13 +4,14 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { supabase } from "./lib/api";
+import { auth } from "./lib/auth";
 import "./styles.css";
 function InvitationRoute({ manage = false }: { manage?: boolean }) {
   const location = useLocation();
   return <App key={location.pathname + location.hash} manage={manage} />;
 }
 const NotFound = lazy(() => import("./pages/NotFound"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const Parties = lazy(() => import("./pages/Parties"));
 const Create = lazy(() => import("./pages/Create"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -19,8 +20,8 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 let previousUser: string | null = null;
-supabase?.auth.onAuthStateChange((event, session) => {
-  const user = session?.user.id || null;
+auth.subscribe((event, session) => {
+  const user = session?.userId || null;
   if (event === "SIGNED_OUT" || (previousUser && user !== previousUser))
     queryClient.clear();
   previousUser = user;
@@ -38,6 +39,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               <Route path="/parties" element={<Parties />} />
               <Route path="/create" element={<Create />} />
               <Route path="/host/:partyId" element={<Dashboard />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

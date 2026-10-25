@@ -1,27 +1,28 @@
 import { useEffect, useState } from "react";
 import { Mail, ArrowRight } from "lucide-react";
-import { supabase } from "../lib/api";
+import { auth } from "../lib/auth";
+import { awsConfigured } from "../lib/aws-config";
 import { Button } from "./ui/button";
 
 export function useAuth() {
-  const [ready, setReady] = useState(!supabase);
+  const [ready, setReady] = useState(!awsConfigured);
   const [userId, setUserId] = useState<string | null>(null);
   useEffect(() => {
-    if (!supabase) return;
+    if (!awsConfigured) return;
     let active = true;
     let receivedAuthEvent = false;
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const unsubscribe = auth.subscribe((_event, session) => {
       receivedAuthEvent = true;
       if (active) {
-        setUserId(session?.user.id || null);
+        setUserId(session?.userId || null);
         setReady(true);
       }
     });
-    void supabase.auth
+    void auth
       .getSession()
-      .then(({ data, error }) => {
+      .then((session) => {
         if (active && !receivedAuthEvent) {
-          setUserId(error ? null : data.session?.user.id || null);
+          setUserId(session?.userId || null);
           setReady(true);
         }
       })
@@ -30,7 +31,7 @@ export function useAuth() {
       });
     return () => {
       active = false;
-      data.subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
   return { ready, userId };
@@ -41,21 +42,19 @@ export function AuthPanel() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit() {
-    if (!supabase) {
-      setMessage("Configure Supabase to sign in. Your demo remains available.");
+    if (!awsConfigured) {
+      setMessage(
+        "Live sign-in is not configured yet. Your demo remains available.",
+      );
       return;
     }
     setBusy(true);
     setMessage("");
     try {
       // Private guest credentials stay on this device, outside the email redirect URL.
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { emailRedirectTo: location.origin + location.pathname },
-      });
-      if (error) throw error;
+      await auth.signIn(email.trim(), location.pathname);
       setMessage(
-        "Check your email for your sign-in link. Open it on this device to continue.",
+        "Opening secure sign-in. Your plans stay saved on this device.",
       );
     } catch (error) {
       setMessage(
@@ -69,7 +68,7 @@ export function AuthPanel() {
     <section className="form-card auth-panel">
       <Mail className="blue-text" />
       <h2>Your people. Your plans.</h2>
-      <p>Sign in with a private email link. No password to remember.</p>
+      <p>Continue to secure sign-in and receive a one-time email code.</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -89,7 +88,7 @@ export function AuthPanel() {
           />
         </label>
         <Button disabled={busy} type="submit">
-          {busy ? "Sending…" : "Send a sign-in link"}
+          {busy ? "Sending…" : "Continue with email"}
           <ArrowRight size={16} />
         </Button>
       </form>

@@ -15,17 +15,13 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   unsubscribe: vi.fn(),
 }));
-vi.mock("../lib/api", () => ({
-  callApi: mocks.callApi,
-  idempotencyKey: () => "create-request",
-  supabase: {
-    auth: {
-      signInWithOtp: mocks.signIn,
-      getSession: mocks.getSession,
-      onAuthStateChange: () => ({
-        data: { subscription: { unsubscribe: mocks.unsubscribe } },
-      }),
-    },
+vi.mock("../lib/api", () => ({ callApi: mocks.callApi }));
+vi.mock("../lib/aws-config", () => ({ awsConfigured: true }));
+vi.mock("../lib/auth", () => ({
+  auth: {
+    signIn: mocks.signIn,
+    getSession: mocks.getSession,
+    subscribe: () => mocks.unsubscribe,
   },
 }));
 const values = {
@@ -55,10 +51,7 @@ function openCreate() {
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
-  mocks.getSession.mockResolvedValue({
-    data: { session: { user: { id: "host" } } },
-    error: null,
-  });
+  mocks.getSession.mockResolvedValue({ userId: "host", idToken: "token" });
   mocks.callApi.mockResolvedValue({
     partyId: "party",
     inviteToken: "private-invite",
@@ -168,10 +161,7 @@ describe("party creation", () => {
   });
 
   it("handles rejected OTP requests and leaves the saved draft available", async () => {
-    mocks.getSession.mockResolvedValue({
-      data: { session: null },
-      error: null,
-    });
+    mocks.getSession.mockResolvedValue(null);
     mocks.signIn.mockRejectedValue(new Error("Network unavailable"));
     localStorage.setItem(
       "together-party-draft",
@@ -186,7 +176,7 @@ describe("party creation", () => {
       target: { value: "alex@example.com" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Send me a sign-in link" }),
+      screen.getByRole("button", { name: "Continue with email" }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toBe(
@@ -196,7 +186,7 @@ describe("party creation", () => {
     expect(
       (
         screen.getByRole("button", {
-          name: "Send me a sign-in link",
+          name: "Continue with email",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false);

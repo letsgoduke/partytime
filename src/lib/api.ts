@@ -1,9 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { awsConfig, awsConfigured } from "./aws-config";
+import { auth } from "./auth";
 import type { Party, Need, Guest, Pledge, Claim } from "./demo";
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-export const supabase =
-  url && key ? createClient(url, key, { auth: { flowType: "pkce" } }) : null;
 export const idempotencyKey = () => crypto.randomUUID();
 interface NeedSnapshot extends Omit<Need, "claimed" | "note"> {
   claimedQuantity: number;
@@ -88,6 +85,18 @@ export function normalizeParty(
     inviteToken: sessionStorage.getItem(`invite-${snapshot.id}`) || undefined,
   };
 }
+const guestActions = new Set([
+  "invitation",
+  "rsvp",
+  "guest",
+  "claim",
+  "pledge",
+  "releaseClaim",
+  "cancelPledge",
+  "editPledge",
+  "changeRsvp",
+  "confirmAttendance",
+]);
 const reads = new Set([
   "invitation",
   "guest",
@@ -125,9 +134,9 @@ export async function callApi<T>(
   action: string,
   payload: Record<string, unknown>,
 ): Promise<T> {
-  if (!supabase)
+  if (!awsConfigured)
     throw new Error(
-      "Live hosting needs Supabase configuration. You can explore the labeled demo.",
+      "Live hosting needs AWS configuration. You can explore the labeled demo.",
     );
   const pending =
     !reads.has(action) && !payload.idempotencyKey
@@ -136,16 +145,47 @@ export async function callApi<T>(
   const request = pending
     ? { ...payload, idempotencyKey: pending.key }
     : payload;
-  const { data, error } = await supabase.rpc("party_api", {
-    action,
-    payload: request,
-  });
-  if (error) throw new Error(error.message);
+  const isGuest = guestActions.has(action);
+  const session = isGuest ? null : await auth.getSession();
+  if (!isGuest && !session) throw new Error("Sign in to manage your parties.");
+  const response = await fetch(
+    `${awsConfig.apiUrl}/${isGuest ? "guest" : "host"}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session ? { Authorization: `Bearer ${session.idToken}` } : {}),
+      },
+      body: JSON.stringify({ action, payload: request }),
+      credentials: "omit",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      signal: AbortSignal.timeout(30000),
+    },
+  );
+  let result: { data?: unknown; error?: { message?: string } };
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(
+      "The server returned an unreadable response. Please retry safely.",
+    );
+  }
+  if (!response.ok || result.error)
+    throw new Error(
+      result.error?.message ||
+        "The request could not be completed. Please try again.",
+    );
+  const data = result.data;
+  if (data === undefined)
+    throw new Error(
+      "The server returned an incomplete response. Please retry safely.",
+    );
   if (pending) sessionStorage.removeItem(pending.storageKey);
   if (action === "rotateInvite")
     sessionStorage.setItem(
       `invite-${payload.partyId}`,
-      String(data.inviteToken),
+      String((data as { inviteToken: string }).inviteToken),
     );
   if (action === "invitation")
     return normalizeParty(data as PartySnapshot) as T;
