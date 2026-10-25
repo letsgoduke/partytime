@@ -18,6 +18,8 @@ The backend now uses AWS throughout. There is no separate hosted-database servic
 | Parties, RSVPs, money records, and scores | Amazon RDS PostgreSQL    |
 | Private database credentials              | AWS Secrets Manager      |
 
+Our [contribution guidelines](CONTRIBUTING.md) keep commits focused and readable.
+
 Read [PROJECT_STATUS.md](PROJECT_STATUS.md) for current progress, [CHANGELOG.md](CHANGELOG.md) for the feature history, or the [GitHub commit history](https://github.com/letsgoduke/partytime/commits/main/) for individual changes and fixes.
 
 ## What works
@@ -65,7 +67,7 @@ npm run test:contract    # simulated AWS HTTP responses; not a live AWS integrat
 npm run format:check
 ```
 
-Install Chromium once with `npx playwright install chromium`. Stop any existing Vite process on port 5173 before `test:contract`. Database checks use a real PostgreSQL engine through PGlite without connecting to production. [Testing details](docs/testing.md) describe exact coverage and limits.
+Install Chromium once with `npx playwright install chromium`. The AWS contract suite uses a separate port (5174), leaving the demo preview on 5173 available. Database checks use a real PostgreSQL engine through PGlite without connecting to production. [Testing details](docs/testing.md) describe exact coverage and limits.
 
 The Amplify build runs `npm run check`. An optional GitHub Actions template lives in `ci/github-actions-check.yml`; enabling it requires workflow-scoped GitHub authorization, which the currently connected credential does not have.
 

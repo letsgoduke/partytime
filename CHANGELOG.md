@@ -1,11 +1,13 @@
 # Product changes
 
-## AWS migration — implemented, not yet deployed
+## October 25, 2026 — AWS migration implemented, deployment pending
 
 - Added Cognito email-code sign-in and separate guest/host API Gateway routes.
 - Added Lambda handlers, private encrypted RDS, Secrets Manager credentials, and an IAM-only migration task.
 - Ported database privacy/accounting/scoring rules to AWS identities.
 - Removed the previous backend SDK and deployment files.
+- Added short-lived host tokens, explicit development-origin controls, and private migration access.
+- Added reproducible infrastructure checks and kept the commit history split by feature and fix.
 - Preserve guest RSVPs without accounts, private management links, separate pledges/receipts, atomic item claims, and verified scoring.
 - Add a plain-language project status page and smaller feature/fix commits.
 
