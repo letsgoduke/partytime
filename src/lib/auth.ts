@@ -89,6 +89,7 @@ export const auth = {
     // Only the path is saved in OIDC state. Private guest fragments never leave this tab.
     await getManager().signinRedirect({
       login_hint: email.trim(),
+      nonce: crypto.randomUUID(),
       state: { returnTo: safeReturnPath(returnTo) },
     });
   },

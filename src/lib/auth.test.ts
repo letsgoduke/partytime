@@ -46,6 +46,7 @@ describe("Cognito session boundary", () => {
     await auth.signIn("guest@example.com", "/manage#private-credential");
     expect(mocks.signinRedirect).toHaveBeenCalledWith({
       login_hint: "guest@example.com",
+      nonce: expect.any(String),
       state: { returnTo: "/parties" },
     });
   });
